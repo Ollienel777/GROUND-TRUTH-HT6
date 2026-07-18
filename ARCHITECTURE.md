@@ -184,17 +184,22 @@ heuristic. It is the single most important property of the design.
 
 ## What this means for the current implementation
 
-The code today is architecture **A**, which is the correct skeleton: it already
-has the extraction/decision split and a symbolic firewall. The two upgrades that
-move it toward the optimal **E** core are exactly the Tier-1 items in
-`IMPROVEMENTS.md`:
+The code today is architecture **A**, which is the correct skeleton: all
+body-reading is confined to one perception seam, `extract(body, view) →
+EvidenceFrame` (enforced by `seam_guard.py`), the decision core consumes only the
+typed frame, and the firewall runs first on raw body *outside* the seam. That is the
+E layering already — perception → grounding → probabilistic update → symbolic
+control — with the perception layer in rules-mode. The two upgrades that sharpen the
+**E** core are exactly the Tier-1 items in `IMPROVEMENTS.md`:
 
 1. **Structural OOD** (grounding/type-check layer) instead of lexical keywords.
 2. **Probabilistic log-odds calibration** instead of a tuned heuristic.
 
-The neural extraction layer (Tier 2) is an optional upgrade, valuable only with a
-model endpoint and only behind a deterministic fallback. Reassuringly, the
-hackathon path and the "build it for real" path point in the same direction.
+The neural extraction layer (Tier 2) is now a genuine drop-in rather than a rewrite:
+because extraction is one seam emitting a typed frame, an LLM can replace `extract`
+by emitting the same `EvidenceFrame`, with the rules path as the deterministic
+fallback — valuable only with a model endpoint and open-ended input. Reassuringly,
+the hackathon path and the "build it for real" path point in the same direction.
 
 **A caveat so the two do not get conflated:** the Tier-1 structural work is a
 *within-A improvement*, not a step toward E. It needs no Bayesian core and no LLM;
@@ -210,8 +215,11 @@ there. Two empirical results bound this:
 - **Entities are not name-coupled** — the renamed-seed harness is identical under
   arbitrary renaming.
 - **Direction is load-bearing** — the lateral-vs-reversion and forward-vs-backward
-  calls turn on it. It is now parsed from word order + a few origin prepositions
-  and decided by potency comparison, rather than a single keyword. This is the
+  calls turn on it. It is resolved from *positive evidence only* (an origin cue, a
+  transition connective, or an active production verb) and decided by potency
+  comparison against C1 — never from a single keyword and never from bare word order
+  (that was a real regression; forward now requires evidence and ambiguity defaults
+  backward). This is the
   smallest stable vocabulary we can reduce it to without a neural extractor; it is
   also where the next brittleness will surface (hunt it with the paraphrase
   harness), and it is the precise thing option E's extraction layer would remove.

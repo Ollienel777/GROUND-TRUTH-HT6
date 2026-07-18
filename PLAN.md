@@ -22,6 +22,8 @@ the full Stage 0–6 pipeline; `DESIGN.md` is written. All checks green:
 | `tests/paraphrase_probe.py` | re-worded items (incl. direction pair) preserve verdict | 12/12 |
 | `tests/renamed_seed_probe.py` | entities renamed to arbitrary tokens — verdicts unchanged | 12/12 |
 | `tests/direction_probe.py` | attacks both direction errors (entity-order **and** grammatical-role mirrors); N8 = tracked known hole | 13/13 (+1 XFAIL) |
+| `tests/extract_probe.py` | pins `extract()` output (the perception seam / an LLM's target schema) | 9/9 |
+| `tests/seam_guard.py` | AST check: raw-text reads live only in `extract`/firewall, nowhere else | PASS |
 
 **Hardening done:** structural classification generalizes off names/IDs (renamed-seed
 12/12); reprogramming detected structurally without reversion keywords; **transition
@@ -32,6 +34,15 @@ to backward (grounded in C1: a potency increase is the law-violating, newsworthy
 reading); injection detector normalizes unicode/zero-width and defeats letter-spacing;
 failure resolution keys off structured provenance only (no body-triggered
 `drop_claim`); non-dict provenance / non-str body degrade to no-op without crashing.
+
+**Perception seam (step-2 refactor):** all raw-body reads are collapsed into one
+`extract(body, view) → EvidenceFrame`; the decision core consumes only the typed
+frame, and the firewall runs first on raw body *outside* the seam (a flagged item is
+never handed to the — possibly-neural — extractor). `seam_guard.py` enforces this
+structurally. The behavioural contract is unchanged (all suites identical), but an LLM
+extractor is now a genuine drop-in: emit the same frame, keep rules as the fallback,
+touch nothing downstream. The boolean→`phenomenon`-enum consolidation is deliberately
+*not* done here (it is a behaviour change, a separate red-first step).
 
 **Known nature of the approach & residual ceiling:** classification is structural, but
 extraction (which states + what direction) is still lexical — now reduced to the

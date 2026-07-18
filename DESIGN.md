@@ -32,10 +32,9 @@ body asserting "250 laboratories" against `independent_groups: 1` is defeated by
 construction, not by detection.
 
 **Narrow, don't delete.** Revision targets the scoped *child* claim
-(`method_class → mechanism_class`, e.g. `defined_factor_perturbation → C3c`), never
-the umbrella — the framework recomputes `umbrella = min(children)` itself. We add
-`set_scope {refuted_under}`, raise the contested complement, and on strong evidence
-promote the matching declared absence to an edge: one item, a multi-claim,
+(`method_class → mechanism_class`), never the umbrella (recomputed as `min(children)`).
+We also `set_scope {refuted_under}`, raise the contested complement, and on strong
+evidence promote the matching declared absence to an edge — one item, a multi-claim,
 provenance-shaped update.
 
 **Skepticism** keys off provenance thinness, never recognition. A single-source,
@@ -47,6 +46,10 @@ knowledge.
 ## Classification is structural, not lexical
 
 Text identifies only *which states* and *what direction*; the graph decides the rest.
+All body-reading is confined to one seam, `extract(body, view) → EvidenceFrame` — a
+typed bundle of classification signals, never magnitude or a command; the decision core
+consumes the frame, never the text. A structural test fails the build if any keyword is
+read outside it.
 
 - **OOD** is precision-first and defaults in-model. A potency-*changing* move is on a
   modeled axis — in-model, including the exotic-sounding near-miss. A
@@ -68,30 +71,29 @@ explained away, and resolves later; *flag-everything* → structural in-model de
 
 ## Firewall
 
-State changes **only** through the returned `Delta` list, enforced at three layers:
-
-1. **No text→mutation path exists.** Magnitude comes exclusively from `provenance`;
-   `body` only matches entities. No code path leads from a body string to a payload.
-2. **The injection gate runs first.** Bodies carrying embedded directives return
-   `no_op` and nothing else (unicode/zero-width normalized, letter-spacing defeated).
-3. **Never bet on the cap.** The harness records an *attempted* mutation the moment a
-   mutating op is emitted, even if the API rejects it — so an injection emits `no_op`
-   only. Any unexpected error also degrades to `no_op`.
+State changes **only** through the returned `Delta` list. The seam above is the first
+guarantee — no code path leads from body text to a payload value. Two more: the
+**injection gate runs first**, so bodies with embedded directives return `no_op` and
+nothing else (unicode/zero-width normalized, letter-spacing defeated); and we **never
+bet on the cap** — the harness records an *attempted* mutation the moment a mutating op
+is emitted, even if the API rejects it, so an injection emits `no_op` only. Any
+unexpected error also degrades to `no_op`.
 
 ## Known limits
 
 Classification is structural; **extraction** (which states, what direction) is still
-lexical — shrunk to the smallest stable vocabulary, not eliminated. That is where the
-residual brittleness lives, and one hole is knowingly accepted and kept visible as an
-`XFAIL` rather than omitted (`direction_probe.py` N8: a forward result that puts the
-source in an oblique phrase — "arose in cultures *seeded with* PSC" — defaults
-backward, deliberately the less-harmful error).
+lexical — shrunk to the smallest stable vocabulary, not eliminated, and now isolated
+behind the single `extract` seam. That is where the residual brittleness lives, and
+one hole is knowingly accepted and kept visible as an `XFAIL` rather than omitted
+(`direction_probe.py` N8: a forward result that puts the source in an oblique phrase —
+"arose in cultures *seeded with* PSC" — defaults backward, deliberately the
+less-harmful error).
 
-**On architecture:** this *is* the neurosymbolic design — extraction → grounding →
-probabilistic update → symbolic control — with the extractor deliberately in
-rules-mode, since for a closed, fully-modeled domain an LLM buys recall at the cost of
-determinism and a new injection surface. The tempting shortcut — LLM proposes deltas,
-validator gates them — fails on the two properties that *define* this problem:
-calibration becomes model-dependent, and a validator can confirm a delta is
-well-formed but never that it is unmanipulated. `ARCHITECTURE.md` has the full
-comparison and the condition under which the neural layer earns its place.
+**On architecture:** this *is* the neurosymbolic design — perception → grounding →
+probabilistic update → symbolic control — with perception deliberately in rules-mode,
+since for a closed, fully-modeled domain an LLM buys recall at the cost of determinism
+and an injection surface. Because extraction is one seam emitting a typed frame, that
+call is reversible: an LLM is a drop-in (same frame, rules as fallback) once an
+endpoint and open-ended input justify it. `ARCHITECTURE.md` has the full comparison —
+including why the LLM-proposes-deltas shortcut fails on the two properties that define
+this problem — and the condition under which the neural layer earns its place.
