@@ -127,13 +127,16 @@ reaching for the impressive option. That judgment is the recruiting signal.
 
 ## Tier 2 — real, but gated or higher-effort
 
-### 2.1 Neural extraction with a deterministic fallback  (architecture signal)
+### 2.1 Neural extraction with a deterministic fallback  (production-only)
 Mirrors CORTEX's real system (LLM extraction → symbolic decision) and removes the
-lexical dependency entirely. **Only if a model endpoint is actually provided**,
-and only behind: temperature 0, schema-constrained output, and the current
-rule-based classifier as fallback. The LLM only *extracts a typed frame*; it never
-decides a mutation. See `ARCHITECTURE.md` (option E) for the full contract.
-**Do not build speculatively.**
+lexical dependency entirely. **Not applicable to the submission:** the organizers
+have confirmed there is *no* model endpoint — `ingest` is imported and called
+in-process, standard library only — so there is nothing to call and nothing to
+build here for the hackathon. This is a *production* upgrade: were it ever built, it
+would sit behind temperature 0, schema-constrained output, and the current
+rule-based classifier as fallback, and the LLM would only *extract a typed frame*,
+never decide a mutation. See `ARCHITECTURE.md` (option E) for the full contract.
+**Do not build for the submission.**
 
 ### 2.2 Richer scoped revision & rationale quality
 "Narrowing beats deleting" is rewarded; make the complement-claim update magnitude
@@ -157,7 +160,8 @@ Prefer a **structural** fix over a longer keyword list when a probe fails.
 ## What NOT to do
 - Do not grow keyword lists as the primary strategy — fragile, low ceiling.
 - Do not do the Bayesian rewrite — reframe in prose instead.
-- Do not add an LLM path without a provided endpoint + deterministic fallback.
+- Do not add an LLM path to the submission at all — the organizers confirmed there
+  is no endpoint and the rules are stdlib-only; it is production-only.
 - Do not chase exact confidence numbers — the axis grades shape.
 - Do not let any change touch the firewall guarantee (no body-derived mutation).
 
@@ -166,4 +170,5 @@ Prefer a **structural** fix over a longer keyword list when a probe fails.
 2. **Run the generalization harnesses** (Tier 3) — cheap; tells you where real
    brittleness is instead of guessing.
 3. **Structural fixes targeted at whatever the harnesses expose** (1.1).
-4. Skip the Bayesian rewrite. Skip the LLM tier unless an endpoint materializes.
+4. Skip the Bayesian rewrite. Skip the LLM tier entirely — confirmed no endpoint,
+   so it is production-only, never part of the submission.

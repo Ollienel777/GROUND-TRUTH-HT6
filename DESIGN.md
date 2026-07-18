@@ -106,10 +106,13 @@ one hole is knowingly accepted and kept visible as an `XFAIL` rather than omitte
 less-harmful error).
 
 **On architecture:** this *is* the neurosymbolic design — perception → grounding →
-probabilistic update → symbolic control — with perception deliberately in rules-mode,
-since for a closed, fully-modeled domain an LLM buys recall at the cost of determinism
-and an injection surface. Because extraction is one seam emitting a typed frame, that
-call is reversible: an LLM is a drop-in (same frame, rules as fallback) once an
-endpoint and open-ended input justify it. `ARCHITECTURE.md` has the full comparison —
-including why the LLM-proposes-deltas shortcut fails on the two properties that define
-this problem — and the condition under which the neural layer earns its place.
+probabilistic update → symbolic control — with perception deliberately in rules-mode.
+For a closed, fully-modeled domain an LLM buys recall at the cost of determinism and
+an injection surface; and for *this* submission the choice is not even open — the
+organizers have confirmed there is no model endpoint and `ingest` is called
+in-process under a stdlib-only rule, so a neural extractor is out of scope entirely.
+Because extraction is nonetheless isolated behind one seam emitting a typed frame,
+that layer stays a documented production drop-in (same frame, rules as fallback) — the
+structure is E's; only the perception layer's implementation is (permanently, here)
+rules. `ARCHITECTURE.md` has the full comparison — including why the
+LLM-proposes-deltas shortcut fails on the two properties that define this problem.
