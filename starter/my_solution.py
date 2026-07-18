@@ -90,6 +90,18 @@ def is_retracted(prov: dict) -> bool:
     return str(prov.get("retraction_status", "none")).lower() in ("retracted", "withdrawn", "corrected")
 
 
+def structured_failure(prov: dict) -> bool:
+    """A pending claim is resolved as failed ONLY from the structured channel:
+    an explicit retraction, or an independent replication attempt (>=2 groups)
+    that found no effect. Never inferred from body phrasing — otherwise untrusted
+    text could force a drop_claim (a text-triggered mutation)."""
+    if is_retracted(prov):
+        return True
+    groups = _num(prov.get("independent_groups", 0))
+    effect = str(prov.get("effect_strength", "")).lower()
+    return groups >= 2 and effect in ("none", "null", "absent", "no_effect", "no effect")
+
+
 # ---------------------------------------------------------------------------
 # Stage 0 — firewall: never derive a mutation from body text
 # ---------------------------------------------------------------------------
@@ -173,14 +185,6 @@ _IDENTITY_PRESERVED_RE = re.compile(
     r"|retain\w+ their identity|kept their identity",
     re.IGNORECASE,
 )
-_FAIL_KW = (
-    "failed to reproduce", "failed to replicate", "could not reproduce",
-    "could not replicate", "did not reproduce", "did not replicate",
-    "unable to reproduce", "unable to replicate", "no such effect",
-    "fails to replicate", "was not reproducible",
-)
-
-
 def _pick(options, key):
     head = key.split("_")[0]
     for o in options or []:
@@ -198,23 +202,37 @@ def classify_ood(view: GraphView, body: str, states):
     axes_excluded = dom.axes_excluded if dom else []
     regimes_not = dom.regimes_not_modeled if dom else []
 
-    # excluded AXIS: a property the model does not track at all
-    if any(k in b for k in _AGE_KW):
-        return "axis", _pick(axes_excluded, "biological_age")
-    if _IDENTITY_PRESERVED_RE.search(body):
-        if any(k in b for k in _FUNC_KW):
-            return "axis", _pick(axes_excluded, "cell_function_independent_of_identity")
-        return "regime", _pick(regimes_not, "identity_preserving_state_change")
-
-    # non-modeled REGIME: a lateral jump between equal-potency, distinct identities
+    reversion = any(k in b for k in _REVERSION_KW)
+    reaches_source = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
     lateral_struct = any(
         a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
         for a in states for c in states if a is not c
     )
     potency_changes = any(a.potency_level != c.potency_level for a in states for c in states if a is not c)
+
+    # A modeled transition (reprogramming toward the source, or any potency move
+    # between represented states) means an exotic-sounding word — "aged",
+    # "identity", etc. — is incidental to an IN-MODEL event, not the phenomenon.
+    # This is the precision guard against the near-miss trap.
+    in_model_transition = reaches_source or potency_changes
+
+    # 1. non-modeled REGIME: a lateral jump between equal-potency, distinct
+    #    identities (structural, highest confidence).
     if lateral_struct:
         return "regime", _pick(regimes_not, "lateral_somatic_conversion")
-    if any(k in b for k in _LATERAL_KW) and not potency_changes and not any(k in b for k in _REVERSION_KW):
+
+    # 2. excluded AXIS: a property the model does not track at all.
+    if not in_model_transition:
+        if any(k in b for k in _AGE_KW):
+            return "axis", _pick(axes_excluded, "biological_age")
+        if _IDENTITY_PRESERVED_RE.search(body):
+            if any(k in b for k in _FUNC_KW):
+                return "axis", _pick(axes_excluded, "cell_function_independent_of_identity")
+            return "regime", _pick(regimes_not, "identity_preserving_state_change")
+
+    # 3. keyword-only lateral (single state named): only when nothing on the
+    #    modeled potency axis is happening.
+    if any(k in b for k in _LATERAL_KW) and not potency_changes and not reversion:
         return "regime", _pick(regimes_not, "lateral_somatic_conversion")
 
     return None, None
@@ -332,12 +350,13 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
                             f"out-of-model regime: {name}", 0.7, True)
 
     # Retraction / failure-to-replicate — resolve a prior pending cleanly.
-    if is_retracted(prov) or any(k in b for k in _FAIL_KW):
+    # Keyed off STRUCTURED provenance only, never body phrasing.
+    if structured_failure(prov):
         pid = _pending_id(states)
         if pid in view.pending_ids():
             return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
-                                "prior pending retracted / failed to replicate; dropped", 0.8, False)
-        return IngestResult([no_op(item.id)], "retracted/failed; nothing to update", 0.6, False)
+                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
+        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
 
     # Stage 4 — in-model decision.
     reversion = any(k in b for k in _REVERSION_KW)
