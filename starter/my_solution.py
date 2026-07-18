@@ -250,19 +250,25 @@ def transition_direction(body_lower: str, states):
     return None
 
 
-_REVERSION_KW = (
+# Reversion vocabulary, split by grammatical role so the modality/predication guards
+# can treat the two differently:
+#   * VERBS/events denote an actual transition ("reverted", "driven back") and are
+#     asserted reversion evidence wherever they appear un-negated.
+#   * DESCRIPTORS are relative-state words ("more potent", "less committed") that are
+#     reversion evidence ONLY when predicated of a change — in a static comparison
+#     ("X is more potent than Y") they describe no event and must not fire.
+# NOTE: we avoid bare "reprogram" — commonly a noun ("the reprogramming claim") that
+# would misfire on text merely mentioning the topic.
+_REV_VERBS = (
     "revert", "reverted", "reversion", "returned", "return to", "return of",
-    "back to", "de-differentiat", "dedifferentiat", "less-committed",
-    "less committed", "more potent", "more primitive", "stem-like",
-    "pluripotent-like", "regain", "reacquire",
-    # broadened for unfamiliar phrasings of the same phenomenon. NOTE: we avoid
-    # bare "reprogram" because it is commonly used as a noun ("the reprogramming
-    # claim") and would misfire on text that merely mentions the topic.
+    "back to", "de-differentiat", "dedifferentiat", "regain", "reacquire",
     "driven to", "driven back", "coaxed", "restored to", "rolled back",
-    "roll back", "irreversib", "no longer holds",
-    "earlier stage", "earlier progenitor", "earlier developmental",
-    "less differentiat", "less mature", "less specialized", "less committed",
-    "regress",
+    "roll back", "irreversib", "no longer holds", "regress",
+)
+_REV_DESCRIPTORS = (
+    "less-committed", "less committed", "more potent", "more primitive",
+    "stem-like", "pluripotent-like", "earlier stage", "earlier progenitor",
+    "earlier developmental", "less differentiat", "less mature", "less specialized",
 )
 _SOURCE_KW = ("source", "pluripoten", "totipotent", "stem cell", "stem-like", "pluripotent-like")
 _LATERAL_KW = (
@@ -289,6 +295,119 @@ _IDENTITY_PRESERVED_RE = re.compile(
     r"|retain\w+ their identity|kept their identity|of the same cell type",
     re.IGNORECASE,
 )
+# --- Clause segmentation + polarity/modality/predication scope (NegEx/ConText-style) ---
+# The reversion signal above is only trustworthy as an ASSERTED, factual event. Three
+# grammatical contexts invert or void it, and flat substring matching misses all three:
+#   * POLARITY    — "did not revert", "failed to return" (a *failed* attempt is evidence
+#                   FOR irreversibility, not against it)
+#   * MODALITY    — "if cells could be driven back ..."  (a hypothetical, not a result)
+#   * PREDICATION — "X is more potent than Y"            (a static comparison, no event)
+# We segment the body into clauses and, per clause, mask the span a negation trigger
+# scopes (NegEx: trigger -> next terminator) and skip hypothetical clauses, then classify
+# the remaining reversion cues. This stays pure classification — no magnitude, no command
+# — so the firewall is untouched; it only decides which booleans `extract` emits.
+_CLAUSE_BOUNDARY = re.compile(r"[.;:\n]")
+_NEG_RE = re.compile(
+    # "no longer" is NOT negation — "irreversibility no longer holds" asserts reversion
+    r"\b(?:not|no(?!\s+longer)|never|without|none|neither|nor|cannot|can't|couldn't|wouldn't|"
+    r"didn't|doesn't|don't|wasn't|weren't|isn't|aren't|hasn't|haven't|"
+    r"did\s+not|does\s+not|do\s+not|was\s+not|were\s+not|is\s+not|are\s+not|"
+    r"could\s+not|would\s+not|has\s+not|have\s+not|fail(?:s|ed)?\s+to|unable\s+to|"
+    r"lack(?:s|ing|ed)?|absence\s+of|no\s+such|no\s+evidence|no\s+sign|ruled\s+out|"
+    r"negative\s+for)\b",
+    re.IGNORECASE)
+# a negation's forward scope ends at a comma or a contrast conjunction (NegEx termination)
+_NEG_TERM = re.compile(
+    r",|\b(?:but|however|whereas|although|though|yet|while|nonetheless|except)\b",
+    re.IGNORECASE)
+# a clause under a conditional/hypothetical frame reports no result
+# NOTE: deliberately NOT "whether" — "we tested whether X ...; confirmed" reports a
+# real result, so "whether" clauses are not reliably hypothetical (see adversarial INJ5).
+_HYP_RE = re.compile(
+    r"\b(?:if|hypothetical(?:ly)?|in\s+principle|were\s+to|would\s+be|"
+    r"suppose|assuming|conceivably|in\s+theory|imagine|should\s+it)\b"
+    # subject-aux inversion is a conditional too: "Were Fibroblast cells to revert ...".
+    # Anchored to clause-start: a fronted auxiliary is clause-initial, so this does NOT
+    # match mid-clause passives like "cells were restored to ..." (a real result).
+    r"|^\s*were\s+\w+(?:\s+\w+){0,3}\s+to\b",
+    re.IGNORECASE)
+# a comparative construction ("more X than", "X-er than", "as X as") is a static
+# comparison; only a change verb turns a relative-state descriptor into an event.
+_COMPARATIVE_RE = re.compile(
+    r"\b(?:more|less)\s+\w+\s+than\b|\b\w+er\s+than\b|\bas\s+\w+\s+as\b", re.IGNORECASE)
+# Transition verbs used ONLY to detect a NEGATED structural reprogramming whose verb is
+# outside the reversion lexicon ("did not CONVERT to PSC"). Kept separate from the
+# reversion vocabulary so it never adds POSITIVE evidence — it only lets a negation scope
+# suppress a source-directed transition that names no reversion keyword.
+_TRANSITION_VERB_RE = re.compile(
+    r"\b(?:revert\w*|reprogram\w*|de-?differentiat\w*|convert\w*|return\w*|restor\w*|"
+    r"regain\w*|reacquir\w*|driven|drive|coax\w*|regress\w*|roll\w*\s+back)\b",
+    re.IGNORECASE)
+_CHANGE_VERB_RE = re.compile(
+    r"\b(?:became|become|becomes|turn\w*|shift\w*|convert\w*|revert\w*|driven|drove|"
+    r"reprogram\w*|differentiat\w*|acquir\w*|regain\w*|return\w*|transform\w*|"
+    r"transition\w*|generat\w*|produc\w*|roll\w*|coax\w*|restor\w*|regress\w*)\b",
+    re.IGNORECASE)
+
+
+def _split_clauses(body: str):
+    """Segment a body into clauses on sentence/hard punctuation. Clause locality is
+    what stops a distractor state (or cue) in one sentence from being read as part of
+    an event described in another."""
+    parts, start = [], 0
+    for m in _CLAUSE_BOUNDARY.finditer(body):
+        seg = body[start:m.start()]
+        if seg.strip():
+            parts.append(seg)
+        start = m.end()
+    tail = body[start:]
+    if tail.strip():
+        parts.append(tail)
+    return parts or [body]
+
+
+def _neg_split(low: str):
+    """Split a lowercased clause into (asserted, negated) spans: the text a leading
+    negation trigger scopes (up to the next comma / contrast conjunction) is 'negated';
+    everything else is 'asserted'. NegEx's trigger+scope model in minimal form."""
+    m = _NEG_RE.search(low)
+    if not m:
+        return low, ""
+    t = _NEG_TERM.search(low, m.end())
+    if t:
+        return low[:m.start()] + " " + low[t.start():], low[m.start():t.start()]
+    return low[:m.start()], low[m.start():]
+
+
+def _has_rev(text: str) -> bool:
+    return any(k in text for k in _REV_VERBS) or any(k in text for k in _REV_DESCRIPTORS)
+
+
+def _scan_reversion(clauses):
+    """Classify the body's reversion cues by grammatical context. Returns
+    (asserted, negated, hypothetical, comparative): a clean asserted reversion anywhere
+    wins (the other three go false); otherwise the flag matching the context that voided
+    the cue is set, so the decision core can suppress a non-event to a no_op."""
+    asserted = neg_p = hyp_p = comp_p = False
+    for c in clauses:
+        low = c.lower()
+        if _HYP_RE.search(low):
+            if _has_rev(low):
+                hyp_p = True
+            continue
+        a_part, n_part = _neg_split(low)
+        if _has_rev(n_part):
+            neg_p = True
+        if any(k in a_part for k in _REV_VERBS):
+            asserted = True
+        elif any(k in a_part for k in _REV_DESCRIPTORS):
+            if _COMPARATIVE_RE.search(a_part) and not _CHANGE_VERB_RE.search(a_part):
+                comp_p = True
+            else:
+                asserted = True
+    return asserted, (neg_p and not asserted), (hyp_p and not asserted), (comp_p and not asserted)
+
+
 def _pick(options, key):
     head = key.split("_")[0]
     for o in options or []:
@@ -307,9 +426,12 @@ def decide_ood(frame: "EvidenceFrame", view: GraphView):
     axes_excluded = dom.axes_excluded if dom else []
     regimes_not = dom.regimes_not_modeled if dom else []
 
+    # Clause-LOCAL: a lateral pair must be co-mentioned in one clause. Two same-potency,
+    # different-lineage states in SEPARATE sentences (a distractor + the real subject) are
+    # not a described lateral conversion, and pairing them globally fabricates an OOD flag.
     lateral_struct = any(
         a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
-        for a in states for c in states if a is not c
+        for group in frame.entity_clauses for a in group for c in group if a is not c
     )
     potency_changes = any(a.potency_level != c.potency_level for a in states for c in states if a is not c)
 
@@ -427,9 +549,13 @@ class EvidenceFrame:
     the firewall by construction. These field names are also the schema an LLM
     extractor would fill."""
     entities: list                 # resolved graph CellState nodes
+    entity_clauses: list           # entities grouped by clause (for clause-local tests)
     direction: str | None          # 'forward' | 'backward' | None
     reaches_source: bool           # a source-potency state or a source-ward word
-    is_reversion: bool             # explicit reversion keyword
+    is_reversion: bool             # an ASSERTED reversion (un-negated, factual, an event)
+    negated: bool                  # reversion cue present but negated ("did not revert")
+    hypothetical: bool             # reversion cue present but hypothetical ("if ... could")
+    comparative: bool              # reversion cue is a static comparison ("more potent than")
     is_forward_worded: bool        # a bare 'differentiat' mention (forward cue)
     is_lateral: bool               # lateral/transdifferentiation keyword
     is_aging: bool                 # biological-age axis words
@@ -448,11 +574,32 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     trusted code — it is deliberately NOT routed through this possibly-neural step."""
     b = body.lower()
     states = find_states(view, body)
+    clauses = _split_clauses(body)
+    entity_clauses = [find_states(view, c) for c in clauses]
+    asserted, negated, hypothetical, comparative = _scan_reversion(clauses)
+    # Structural negation (asserted-wins): a clause whose negated span negates a
+    # source-directed transition, even when the verb is outside the reversion lexicon
+    # ("did not convert to PSC"). Only fires when NO clause cleanly asserts a reversion,
+    # so a real assertion elsewhere in the body ("... but cells reverted to PSC") wins.
+    if not asserted:
+        for c, grp in zip(clauses, entity_clauses):
+            low = c.lower()
+            if _HYP_RE.search(low):
+                continue
+            _, n_part = _neg_split(low)
+            if n_part and _TRANSITION_VERB_RE.search(n_part) and (
+                    any(s.potency_level <= 1 for s in grp) or any(k in n_part for k in _SOURCE_KW)):
+                negated = True
+                break
     return EvidenceFrame(
         entities=states,
+        entity_clauses=entity_clauses,
         direction=transition_direction(b, states),
         reaches_source=any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW),
-        is_reversion=any(k in b for k in _REVERSION_KW),
+        is_reversion=asserted,
+        negated=negated,
+        hypothetical=hypothetical,
+        comparative=comparative,
         is_forward_worded=("differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b),
         is_lateral=any(k in b for k in _LATERAL_KW),
         is_aging=any(k in b for k in _AGE_KW),
@@ -547,6 +694,18 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
             return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
                                 "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
         return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
+
+    # Polarity / modality / predication guard (NegEx/ConText-style, computed in the
+    # perception seam). A reversion cue that is NEGATED ("did not revert"), HYPOTHETICAL
+    # ("if cells could be driven back"), or a static COMPARISON ("more potent than")
+    # describes no asserted reprogramming event. Suppress it to a no_op before the
+    # structural default below can read it — a failed/absent reversion is, if anything,
+    # evidence FOR irreversibility, never against it.
+    if frame.negated or frame.hypothetical or frame.comparative:
+        why = ("negated" if frame.negated else
+               "hypothetical" if frame.hypothetical else "static comparison")
+        return IngestResult([no_op(item.id)],
+                            f"reversion cue not asserted ({why}); no state change", 0.6, False)
 
     # Stage 4 — in-model decision.
     # A contradiction of the "cannot go backward" law is recognised two ways: an

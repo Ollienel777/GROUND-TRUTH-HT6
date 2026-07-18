@@ -80,6 +80,21 @@ read outside it.
   negative on the largest axis. So **forward requires positive evidence** (an origin
   cue, or a transition connective linking the pair); anything unresolved defaults to
   backward. Direction is never inferred from word order.
+- **Event assertion** gates the reversion reading (NegEx/ConText-style, in the `extract`
+  seam): a reversion cue only contradicts C1 if an event is actually *asserted*. Three
+  grammatical contexts void it, and each collapses to no revision — a failed/absent
+  reversion is evidence *for* irreversibility, never against it. **Polarity:** a negated
+  or null result ("did *not* revert", "*no* reprogramming observed", "*failed to*
+  return"), scoped per clause with an *asserted-wins* rule so a real reversion elsewhere
+  in the body still counts. **Modality:** a conditional/hypothetical ("*if* cells *could*
+  be driven back … no such result"; the inverted "*Were* cells to revert …"). **Predication:**
+  a static comparison ("*is more potent than*") describes no transition, unlike a change
+  verb ("*became* more potent"). Deliberately asymmetric-safe: "*no longer* holds" is a
+  reprogramming assertion, not a negation, and still revises.
+- **Clause locality** scopes the lateral-OOD test: two equal-potency, distinct-lineage
+  states are a lateral jump only when co-mentioned in one clause. A distractor state in
+  another sentence ("Neuron populations were profiled. Separately, Fibroblast → PSC …")
+  no longer manufactures a false regime-OOD that masks the real contradiction.
 
 **What each choice resists:** *trust-the-body* → provenance-only magnitude;
 *flip-flop* → bounded LLR pool + ε gate; *anchor* → thin evidence is held rather than
@@ -99,11 +114,17 @@ unexpected error also degrades to `no_op`.
 
 Classification is structural; **extraction** (which states, what direction) is still
 lexical — shrunk to the smallest stable vocabulary, not eliminated, and now isolated
-behind the single `extract` seam. That is where the residual brittleness lives, and
-one hole is knowingly accepted and kept visible as an `XFAIL` rather than omitted
-(`direction_probe.py` N8: a forward result that puts the source in an oblique phrase —
-"arose in cultures *seeded with* PSC" — defaults backward, deliberately the
-less-harmful error).
+behind the single `extract` seam. Polarity, modality, predication, and clause locality
+are handled explicitly (see above) and locked by `polarity_probe.py`, so the common
+null-result / hypothetical / comparative / distractor failures no longer flip a verdict.
+The residual brittleness that remains is the *unusual* construction: the polarity/modality
+cues are still matched lexically (clause-scoped negation masking, a windowed reversion
+vocabulary, plus a short list of whole-body markers), so a sufficiently oblique negation
+or conditional outside that vocabulary can still slip through. The deliberately
+less-harmful hole is kept visible as an `XFAIL` (`direction_probe.py` N8: a forward result
+that puts the source in an oblique phrase — "arose in cultures *seeded with* PSC" —
+defaults backward). This is the price of rules-mode perception, and the exact ceiling a
+neural extractor would lift.
 
 **On architecture:** this *is* the neurosymbolic design — perception → grounding →
 probabilistic update → symbolic control — with perception deliberately in rules-mode.

@@ -52,7 +52,13 @@ where residual brittleness lives, and one hole is knowingly accepted and tracked
 phrase — "arose in cultures seeded with PSC" — defaults backward). See
 `IMPROVEMENTS.md` (extraction ceiling; and the direction-fix cautionary tale — a
 structural fix that shipped green *and* regressed, twice) and
-`ARCHITECTURE.md` (why A is right here, and the exact condition under which E wins).
+`ARCHITECTURE.md`. On A-vs-E: the labels have effectively collapsed for the
+submission — what ships already *is* E's layering (the `extract` seam → grounding →
+log-odds → Delta API); only the perception layer runs in rules-mode, and with the
+organizers' confirmed no-endpoint (in-process, stdlib-only) that is permanent, not
+provisional. So "within-A" means only that the classification work needs no neural or
+Bayesian core — not that the code lacks E's structure. There is no submission-time
+condition under which the neural layer is added; it is a documented production drop-in.
 
 ---
 
