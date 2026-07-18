@@ -37,7 +37,7 @@ ROOT = os.path.dirname(HERE)
 PROBES = [
     "seam_guard", "firewall_emit_guard",
     "renamed_seed_probe", "paraphrase_probe", "extract_probe",
-    "direction_probe", "polarity_probe",
+    "direction_probe", "polarity_probe", "deterministic_perception_probe",
     "ood_subtype_probe", "skepticism_probe",
     "adversarial_probe", "adversarial_provenance_probe",
     "malformed_provenance_probe", "trajectory_probe",
@@ -72,7 +72,15 @@ def _failed(code: int, out: str) -> bool:
         return True
     if _FAIL_LINE.search(out) or any(rx.search(out) for rx in _FAIL_SUBSTR):
         return True
-    return any(int(m) < int(n) for m, n in _TALLY.findall(out))
+    # Tally backup, per line — but skip tracked-hole reports ("0/5 residuals",
+    # XFAIL summaries): a probe that exits 0 and labels a line XFAIL/residual has
+    # already declared those as expected, so an m<n there is not a failure.
+    for line in out.splitlines():
+        if re.search(r"xfail|residual", line, re.IGNORECASE):
+            continue
+        if any(int(m) < int(n) for m, n in _TALLY.findall(line)):
+            return True
+    return False
 
 
 def main():

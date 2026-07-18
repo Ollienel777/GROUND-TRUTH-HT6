@@ -147,16 +147,20 @@ _INJECTION_NOSPACE = (
 # Treat it as a directive only when it targets graph/control vocabulary, so a
 # legitimate "override the developmental barrier" is no longer flagged.
 _INJECTION_OVERRIDE_RE = re.compile(
-    r"\boverride\s+(?:the\s+)?(?:prior|previous|provenance|confidence|claim|belief|"
-    r"knowledge\s+base|instruction|rules?)\b", re.IGNORECASE)
+    r"\boverride\s+(?:the\s+)?(?:prior|previous|provenance|"
+    # "confidence" is control vocab EXCEPT the statistical collocation
+    # ("confidence interval/bound/level/limit"), which is ordinary science.
+    r"confidence(?!\s+(?:interval|bound|level|limit)s?)|"
+    r"claim|belief|knowledge\s+base|instruction|rules?)\b", re.IGNORECASE)
 # De-spaced twin of the above, matched against a whitespace-stripped body so the
 # same control-vocabulary targeting also defeats no-space ("overridetheconfidence")
 # and letter-spacing ("o v e r r i d e ... confidence") evasion — both of which
 # collapse to a form the \s+ regex above cannot see. Still targeted (never bare
 # "override") to preserve the low-false-positive intent.
 _INJECTION_OVERRIDE_NOSPACE_RE = re.compile(
-    r"override(?:the)?(?:prior|previous|provenance|confidence|claim|belief|"
-    r"knowledgebase|instruction|rules?)")
+    r"override(?:the)?(?:prior|previous|provenance|"
+    r"confidence(?!(?:interval|bound|level|limit)s?)|"
+    r"claim|belief|knowledgebase|instruction|rules?)")
 
 
 def _normalize_for_scan(body: str) -> str:
