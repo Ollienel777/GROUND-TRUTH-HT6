@@ -1,0 +1,25 @@
+{
+  "cell_states": [
+    {"id": "st_source", "name": "SourceState", "potency_level": 1, "lineage_identity": "root"},
+    {"id": "st_mid", "name": "MidState", "potency_level": 2, "lineage_identity": "branch"},
+    {"id": "st_leaf_a", "name": "LeafA", "potency_level": 3, "lineage_identity": "branch/a"},
+    {"id": "st_leaf_b", "name": "LeafB", "potency_level": 3, "lineage_identity": "branch/b"}
+  ],
+  "claims": [
+    {"id": "Q1", "statement": "A leaf state cannot return to the source state.", "epistemic_status": "established", "confidence": 0.93},
+    {"id": "Q2", "statement": "Transitions do not increase potency.", "epistemic_status": "established", "confidence": 0.95},
+    {"id": "Q3", "statement": "No direct transition between distinct leaf states.", "epistemic_status": "established", "confidence": 0.95}
+  ],
+  "absences": [
+    {"id": "ab_leafa_source", "frm": "LeafA", "to": "SourceState", "justified_by": ["Q1", "Q2"]},
+    {"id": "ab_leafa_leafb", "frm": "LeafA", "to": "LeafB", "justified_by": ["Q3"]}
+  ],
+  "domain": {
+    "entity_types": ["CellState", "TranscriptionFactor", "Process", "MechanisticClaim", "EvidenceItem"],
+    "axes_modeled": ["potency", "lineage_identity"],
+    "axes_excluded": ["biological_age", "cell_function_independent_of_identity"],
+    "regimes_modeled": ["differentiation_transition", "forced_factor_influence"],
+    "regimes_not_modeled": ["lateral_somatic_conversion", "identity_preserving_state_change"],
+    "topological_assumption": "All transitions move monotonically along the potency axis between adjacent levels."
+  }
+}

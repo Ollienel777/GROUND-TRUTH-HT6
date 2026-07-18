@@ -1,0 +1,36 @@
+{
+  "cell_states": [
+    {"id": "cs_psc", "name": "PluripotentStemCell", "potency_level": 1, "lineage_identity": "pluripotent"},
+    {"id": "cs_meso_prog", "name": "MesodermalProgenitor", "potency_level": 2, "lineage_identity": "mesoderm"},
+    {"id": "cs_fibroblast", "name": "Fibroblast", "potency_level": 3, "lineage_identity": "mesoderm/connective"},
+    {"id": "cs_skeletal", "name": "SkeletalMuscleCell", "potency_level": 3, "lineage_identity": "mesoderm/muscle"},
+    {"id": "cs_neuron", "name": "Neuron", "potency_level": 3, "lineage_identity": "ectoderm/neural"},
+    {"id": "cs_intestinal", "name": "IntestinalEpithelialCell", "potency_level": 3, "lineage_identity": "endoderm/gut"}
+  ],
+  "claims": [
+    {"id": "C1", "statement": "Developmental transitions do not increase potency.", "epistemic_status": "established", "confidence": 0.97},
+    {"id": "C2", "statement": "No direct transition between distinct terminal identities; only adjacent steps.", "epistemic_status": "established", "confidence": 0.95},
+    {"id": "C3g", "statement": "A terminal cell cannot return to pluripotency (any mechanism).", "epistemic_status": "established", "confidence": 0.93, "derived_from": ["C3a", "C3b", "C3c", "C3d"]},
+    {"id": "C3a", "statement": "...by spontaneous means.", "epistemic_status": "established", "confidence": 0.98, "scope": {"mechanism_class": "spontaneous"}},
+    {"id": "C3b", "statement": "...by oocyte nuclear transfer.", "epistemic_status": "established", "confidence": 0.90, "scope": {"mechanism_class": "oocyte_nt"}},
+    {"id": "C3c", "statement": "...by defined-factor expression.", "epistemic_status": "established", "confidence": 0.92, "scope": {"mechanism_class": "defined_factor"}},
+    {"id": "C3d", "statement": "...by environmental stress.", "epistemic_status": "established", "confidence": 0.92, "scope": {"mechanism_class": "env_stress"}},
+    {"id": "C4", "statement": "Differentiated cells retain full nuclear developmental potential.", "epistemic_status": "contested", "confidence": 0.45},
+    {"id": "C5", "statement": "Pluripotent cells differentiate into somatic lineages.", "epistemic_status": "established", "confidence": 0.99},
+    {"id": "C6", "statement": "Differentiation proceeds by progressive lineage restriction.", "epistemic_status": "established", "confidence": 0.96}
+  ],
+  "absences": [
+    {"id": "ab_fib_psc", "frm": "Fibroblast", "to": "PluripotentStemCell", "justified_by": ["C3g", "C1"]},
+    {"id": "ab_intest_psc", "frm": "IntestinalEpithelialCell", "to": "PluripotentStemCell", "justified_by": ["C3g", "C1"]},
+    {"id": "ab_fib_neuron", "frm": "Fibroblast", "to": "Neuron", "justified_by": ["C2"]},
+    {"id": "ab_fib_musc", "frm": "Fibroblast", "to": "SkeletalMuscleCell", "justified_by": ["C2"]}
+  ],
+  "domain": {
+    "entity_types": ["CellState", "TranscriptionFactor", "Process", "MechanisticClaim", "EvidenceItem"],
+    "axes_modeled": ["potency", "lineage_identity"],
+    "axes_excluded": ["biological_age", "cell_function_independent_of_identity"],
+    "regimes_modeled": ["differentiation_transition", "forced_factor_influence"],
+    "regimes_not_modeled": ["lateral_somatic_conversion", "identity_preserving_state_change"],
+    "topological_assumption": "All transitions move monotonically along the potency axis between adjacent levels."
+  }
+}

@@ -1,0 +1,3 @@
+# GROUND TRUTH runs on the Python standard library alone.
+# If your solution calls an LLM, add its client here, e.g.:
+# anthropic>=0.40
