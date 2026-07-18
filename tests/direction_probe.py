@@ -77,6 +77,36 @@ CASES = [
      "PluripotentStemCell cells matured into Fibroblast populations, consistent with prior work.",
      lambda r: not _revised(r), "no revision (forward is not news)", False),
 
+    # ---- PRODUCTION VERBS ----
+    # produce/generate/yield are ordinary differentiation verbs, not exotic ones, so
+    # forward statements using them must not fabricate a contradiction. The mirrors
+    # below vary GRAMMATICAL ROLE, not entity order: the tempting fix (just add the
+    # verbs to the connective set) passes PV4 but breaks PV6, because these verbs are
+    # just as common as passive participles as they are as active verbs.
+    ("PV1 forward, active production verb",
+     "PluripotentStemCell produced Fibroblast cells under standard conditions.",
+     lambda r: not _revised(r), "no revision (forward)", False),
+
+    ("PV2 forward, active verb behind a head noun",
+     "PluripotentStemCell cells generated Fibroblast populations, as expected.",
+     lambda r: not _revised(r), "no revision (forward)", False),
+
+    ("PV3 forward, 'yielded'",
+     "PluripotentStemCell yielded Fibroblast cells in routine culture.",
+     lambda r: not _revised(r), "no revision (forward)", False),
+
+    ("PV4 backward mirror by ENTITY ORDER (must still be caught)",
+     "Fibroblast produced PluripotentStemCell colonies in many independent labs.",
+     lambda r: _revised(r) and not r.ood_flag, "revise (down)", False),
+
+    ("PV5 backward, passive + 'from' origin cue (must still be caught)",
+     "PluripotentStemCell colonies were produced from Fibroblast cultures, reproduced by many independent groups.",
+     lambda r: _revised(r) and not r.ood_flag, "revise (down)", False),
+
+    ("PV6 backward mirror by GRAMMATICAL ROLE — participle, no origin cue",
+     "PluripotentStemCell colonies, produced at high efficiency, emerged after Fibroblast cells received defined factors.",
+     lambda r: _revised(r) and not r.ood_flag, "revise (down)", False),
+
     # ---- KNOWN RESIDUAL (documented, expected to fail) ----
     # Forward in meaning, but no recognized connective and no 'differentiat', so the
     # asymmetric default reads it as backward and revises spuriously. This is the

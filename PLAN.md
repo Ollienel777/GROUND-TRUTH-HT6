@@ -21,7 +21,7 @@ the full Stage 0–6 pipeline; `DESIGN.md` is written. All checks green:
 | `tests/malformed_provenance_probe.py` | missing/garbage/non-dict inputs degrade gracefully | 11/11 |
 | `tests/paraphrase_probe.py` | re-worded items (incl. direction pair) preserve verdict | 12/12 |
 | `tests/renamed_seed_probe.py` | entities renamed to arbitrary tokens — verdicts unchanged | 12/12 |
-| `tests/direction_probe.py` | attacks **both** direction errors; N8 = tracked known hole | 7/7 (+1 XFAIL) |
+| `tests/direction_probe.py` | attacks both direction errors (entity-order **and** grammatical-role mirrors); N8 = tracked known hole | 13/13 (+1 XFAIL) |
 
 **Hardening done:** structural classification generalizes off names/IDs (renamed-seed
 12/12); reprogramming detected structurally without reversion keywords; **transition
@@ -37,9 +37,10 @@ failure resolution keys off structured provenance only (no body-triggered
 extraction (which states + what direction) is still lexical — now reduced to the
 smallest stable vocabulary (entity tokens + a few directional prepositions). That is
 where residual brittleness lives, and one hole is knowingly accepted and tracked
-(`direction_probe.py` N8: forward phrasing with an unrecognized connective defaults
-backward). See `IMPROVEMENTS.md` (extraction ceiling; and the direction-fix
-cautionary tale — a structural fix that shipped green *and* regressed) and
+(`direction_probe.py` N8: a forward result putting the source in an oblique non-`from`
+phrase — "arose in cultures seeded with PSC" — defaults backward). See
+`IMPROVEMENTS.md` (extraction ceiling; and the direction-fix cautionary tale — a
+structural fix that shipped green *and* regressed, twice) and
 `ARCHITECTURE.md` (why A is right here, and the exact condition under which E wins).
 
 ---

@@ -191,6 +191,15 @@ _DIR_CONNECTIVE = re.compile(
     r"\bto\s+(?:a|an|the)\b",
     re.IGNORECASE)
 
+# produce/generate/yield are ordinary transition verbs ("PSC produced Fibroblast"),
+# but they are just as common as PASSIVE PARTICIPLES ("PSC colonies, produced at high
+# efficiency, emerged after Fibroblast was treated"), where they describe the subject
+# instead of linking the pair — and reading that as forward would drop a real
+# contradiction. So they are trusted only in active, subject-adjacent position: within
+# a word or two of the first state, with no intervening clause boundary. A participle
+# use falls through to None, hence to the backward default, which costs nothing.
+_ACTIVE_PRODUCTION = re.compile(r"^\s*(?:\w+\s+){0,2}(?:produc|generat|yield)\w*\s", re.IGNORECASE)
+
 
 def transition_direction(body_lower: str, states):
     """Resolve (origin -> destination) and return 'forward' | 'backward' | None.
@@ -203,10 +212,12 @@ def transition_direction(body_lower: str, states):
     differentiation, already held near-certain by C5, and is never news.
 
     Direction is asserted only on POSITIVE evidence: an explicit origin cue
-    ("... produced from <state>") or a transition connective linking the pair.
-    Bare word order is never used — "PSC colonies emerged after Fibroblast cells
-    received defined factors" is reprogramming despite naming the destination
-    first. Unresolved returns None and the caller defaults to backward.
+    ("... produced from <state>"), a transition connective linking the pair, or a
+    production verb in clean active subject-adjacent position. Bare word order is
+    never used — "PSC colonies emerged after Fibroblast cells received defined
+    factors" is reprogramming despite naming the destination first. An ambiguous
+    cue is not positive evidence: unresolved returns None and the caller defaults
+    to backward, so failing to resolve is always the cheap error.
     """
     named = sorted(((body_lower.find(s.name.lower()), s) for s in states
                     if body_lower.find(s.name.lower()) >= 0), key=lambda t: t[0])
@@ -218,6 +229,8 @@ def transition_direction(body_lower: str, states):
         origin, dest = last, first            # "... produced from <state>"
     elif _DIR_CONNECTIVE.search(between):
         origin, dest = first, last            # "<state> gave rise to / into <state>"
+    elif "," not in between and _ACTIVE_PRODUCTION.match(between):
+        origin, dest = first, last            # "<state> produced <state>" — clean SVO only
     else:
         return None                           # no positive evidence: do not guess
     if dest.potency_level < origin.potency_level:

@@ -30,6 +30,15 @@ imagined one of the two failure directions. **Two lessons, both now load-bearing
   probes must attack **both** directions of a rule, and known holes must be
   recorded as visible `XFAIL`s (see `tests/direction_probe.py` N8) rather than
   quietly omitted — an unrecorded hole is how the first one survived.
+- **"Write the mirror" is not enough — mirror every dimension the rule's assumption
+  varies along.** This bit us a *second* time. The follow-up fix (adding
+  produce/generate/yield to the connective set) was proposed with "and their
+  backward mirrors" as the discipline — but the backward mirror by *entity order*
+  ("Fibroblast produced PSC", probe PV4) **passes** under that fix. The case that
+  breaks it is the mirror by *grammatical role* (PV6: the same verb as a passive
+  participle), because the assumption being made was about grammar, not order. The
+  proposed probe set would have gone green and shipped the regression. Before
+  writing probes, name the assumption the rule depends on, then vary *that*.
 
 ---
 
@@ -56,21 +65,27 @@ direction (a small, stable one)**:
   identical. (Residual gap: `find_states` is CamelCase-only, so lowercase
   multi-word entity phrases still lean on `_SOURCE_KW`.)
 - **Direction:** resolved by `transition_direction` from *positive evidence only* —
-  an origin cue (`"produced from <state>"`) or a transition connective linking the
-  pair (`"gave rise to"`, `"into"`, `"toward"`) — then decided by **potency
-  comparison**, never by the `"differentiat"` substring and **never by bare word
-  order**. Grounded in the graph's own law: C1 says transitions do not increase
-  potency, and `potency_level` is inverted, so a destination of *lower*
-  potency_level is the C1-violating (newsworthy) reading. The two directions are
-  asymmetric — a missed reprogramming is a false negative on the biggest axis,
+  an origin cue (`"produced from <state>"`), a transition connective linking the
+  pair (`"gave rise to"`, `"into"`, `"toward"`, `"became"`), or a production verb
+  (`produce`/`generate`/`yield`) in clean active subject-adjacent position — then
+  decided by **potency comparison**, never by the `"differentiat"` substring and
+  **never by bare word order**. Grounded in the graph's own law: C1 says transitions
+  do not increase potency, and `potency_level` is inverted, so a destination of
+  *lower* potency_level is the C1-violating (newsworthy) reading. The two directions
+  are asymmetric — a missed reprogramming is a false negative on the biggest axis,
   while source→terminal is already near-certain under C5 and is never news — so
   **forward must be positively evidenced and anything unresolved defaults to
-  backward.**
-  *Known residual (tracked, `direction_probe.py` N8):* a genuinely-forward result
-  using an unrecognized connective and omitting "differentiat" defaults backward
-  and is revised spuriously. That is the accepted price of the asymmetry, and it is
-  the less-harmful error — but it is real, and it is the sharpest argument in this
-  document for eventually not hand-parsing direction at all (Tier 2.4).
+  backward.** An ambiguous cue is therefore never treated as evidence: production
+  verbs are trusted only as clean SVO, because as passive participles ("colonies,
+  *produced* at high efficiency, emerged after…") they describe the subject rather
+  than link the pair, and reading that as forward would drop a real contradiction.
+  *Known residual (tracked, `direction_probe.py` N8):* the common verbs are now
+  covered, but a forward result that puts the **source in an oblique phrase with a
+  non-`from` preposition** ("Fibroblast populations arose in cultures *seeded with*
+  PSC") still defaults backward and is revised spuriously. It is the less-harmful
+  error and the accepted price of the asymmetry — but it is real, and it is the
+  sharpest argument in this document for eventually not hand-parsing direction at
+  all (Tier 2.4).
 
 The honest framing for `DESIGN.md`: we do not eliminate the lexical step, we
 *shrink its surface area to the smallest stable vocabulary* and make the decision

@@ -83,8 +83,9 @@ State changes **only** through the returned `Delta` list, enforced at three laye
 Classification is structural; **extraction** (which states, what direction) is still
 lexical — shrunk to the smallest stable vocabulary, not eliminated. That is where the
 residual brittleness lives, and one hole is knowingly accepted and kept visible as an
-`XFAIL` rather than omitted (`direction_probe.py` N8: forward phrasing with an
-unrecognized connective defaults backward — deliberately the less-harmful error).
+`XFAIL` rather than omitted (`direction_probe.py` N8: a forward result that puts the
+source in an oblique phrase — "arose in cultures *seeded with* PSC" — defaults
+backward, deliberately the less-harmful error).
 
 **On architecture:** this *is* the neurosymbolic design — extraction → grounding →
 probabilistic update → symbolic control — with the extractor deliberately in
