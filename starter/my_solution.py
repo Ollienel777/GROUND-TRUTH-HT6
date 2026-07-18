@@ -100,6 +100,10 @@ _INJECTION_PHRASES = (
     "override this", "delete claim", "drop claim", "remove the claim",
     "processor note", "system note", "admin", "you must set", "must set",
     "force the", "update the confidence", "assistant", "instruction:",
+    # natural-language directives that try to dictate belief state without evidence
+    "fully established and certain", "as certain in all cases", "treat the claim",
+    "treat this claim", "regard the claim", "going forward, treat", "in all cases",
+    "consider it settled", "consider the claim",
 )
 _BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence", "must", "certain")
 
@@ -137,6 +141,14 @@ _REVERSION_KW = (
     "back to", "de-differentiat", "dedifferentiat", "less-committed",
     "less committed", "more potent", "more primitive", "stem-like",
     "pluripotent-like", "regain", "reacquire",
+    # broadened for unfamiliar phrasings of the same phenomenon. NOTE: we avoid
+    # bare "reprogram" because it is commonly used as a noun ("the reprogramming
+    # claim") and would misfire on text that merely mentions the topic.
+    "driven to", "driven back", "coaxed", "restored to", "rolled back",
+    "roll back", "irreversib", "no longer holds",
+    "earlier stage", "earlier progenitor", "earlier developmental",
+    "less differentiat", "less mature", "less specialized", "less committed",
+    "regress",
 )
 _SOURCE_KW = ("source", "pluripoten", "totipotent", "stem cell", "stem-like", "pluripotent-like")
 _LATERAL_KW = (
@@ -149,12 +161,17 @@ _AGE_KW = (
     "lifespan", "biological age", "chronological age", "epigenetic age",
     "cellular age", "youthful",
 )
-_FUNC_KW = ("function", "functional capacity", "metabolic", "secretory", "contractil", "excitabil")
-_IDENTITY_PRESERVED_KW = (
-    "without changing identity", "identity unchanged", "same identity",
-    "identity-preserving", "identity preserving", "retained its identity",
-    "same cell type", "without changing its type", "without loss of identity",
-    "while remaining", "without altering identity",
+_FUNC_KW = ("function", "functional", "metabolic", "secretory", "contractil",
+            "excitabil", "proliferat", "capacity", "performance")
+# Regex is more robust to phrasing than a fixed keyword list: matches
+# "without any change in ... identity", "identity was preserved/retained/intact",
+# "while remaining a <type>", etc.
+_IDENTITY_PRESERVED_RE = re.compile(
+    r"(?:without|no)[^.]{0,40}(?:chang\w+|alter\w+|loss|shift\w*)[^.]{0,40}identit"
+    r"|identit\w*[^.]{0,40}(?:unchang\w+|preserv\w+|retain\w+|intact|maintain\w+|same)"
+    r"|while remaining|same cell type|without changing its type|without altering identity"
+    r"|retain\w+ their identity|kept their identity",
+    re.IGNORECASE,
 )
 _FAIL_KW = (
     "failed to reproduce", "failed to replicate", "could not reproduce",
@@ -184,7 +201,7 @@ def classify_ood(view: GraphView, body: str, states):
     # excluded AXIS: a property the model does not track at all
     if any(k in b for k in _AGE_KW):
         return "axis", _pick(axes_excluded, "biological_age")
-    if any(k in b for k in _IDENTITY_PRESERVED_KW):
+    if _IDENTITY_PRESERVED_RE.search(body):
         if any(k in b for k in _FUNC_KW):
             return "axis", _pick(axes_excluded, "cell_function_independent_of_identity")
         return "regime", _pick(regimes_not, "identity_preserving_state_change")
