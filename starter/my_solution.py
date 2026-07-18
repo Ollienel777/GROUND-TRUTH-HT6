@@ -190,7 +190,17 @@ def find_states(view: GraphView, body: str):
     return out
 
 
-_ORIGIN_CUE = re.compile(r"(?:from|out of|derived from|starting from|originating from)\s+$", re.IGNORECASE)
+# "seeded with / seeded from / inoculated with" are substrate markers: the state
+# that FOLLOWS them is the starting material (the origin), exactly like "derived
+# from". Including them lets us resolve "<terminal> arose in cultures seeded with
+# <source>" as forward differentiation instead of falling through to the backward
+# default. The cue is direction-symmetric — it keys off the substrate, not word
+# order — so it cannot mask a genuine reprogramming ("<source> arose ... seeded
+# with <terminal>" still resolves backward and is revised).
+_ORIGIN_CUE = re.compile(
+    r"(?:from|out of|derived from|starting from|originating from|"
+    r"seeded with|seeded from|inoculated with)\s+$",
+    re.IGNORECASE)
 
 # Connectives that genuinely denote a transition, establishing "first -> last".
 # Deliberately NOT a bare "to": ambiguous linkers ("compared to", "relative to")

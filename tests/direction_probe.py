@@ -4,8 +4,10 @@ transition-direction rule.
 Why this file exists: the previous direction fix passed a 12/12 paraphrase suite
 and still shipped a false negative, because the same author wrote the fix and the
 test and shared a blind spot. This suite is written to break the rule in both
-directions, and it keeps one KNOWN-FAIL case visible on purpose (case 8) rather
-than letting the residual hole go unrecorded.
+directions. It formerly kept case 8 (a "seeded with" forward sentence) visible as
+a documented KNOWN-FAIL; that hole is now closed by treating "seeded with" as a
+substrate/origin marker, and N9 is its regression guard (the reprogramming mirror
+of the same construction).
 
 Grounding: claim C1 ("Developmental transitions do not increase potency") is the
 graph's own direction law. potency_level is inverted (lower = more potent), so a
@@ -107,13 +109,22 @@ CASES = [
      "PluripotentStemCell colonies, produced at high efficiency, emerged after Fibroblast cells received defined factors.",
      lambda r: _revised(r) and not r.ood_flag, "revise (down)", False),
 
-    # ---- KNOWN RESIDUAL (documented, expected to fail) ----
-    # Forward in meaning, but no recognized connective and no 'differentiat', so the
-    # asymmetric default reads it as backward and revises spuriously. This is the
-    # price of defaulting to backward; we keep it VISIBLE rather than unrecorded.
-    ("N8 forward with an unrecognized connective -> defaults backward (KNOWN HOLE)",
+    # ---- FORMERLY A KNOWN HOLE, NOW FIXED ----
+    # "seeded with <state>" is a substrate/origin marker: the state after it is the
+    # starting material. Recognising it in _ORIGIN_CUE resolves this as forward
+    # (source -> terminal) instead of falling through to the backward default.
+    ("N8 forward via 'seeded with' substrate marker -> resolves forward (FIXED)",
      "Fibroblast populations arose in cultures seeded with PluripotentStemCell.",
-     lambda r: not _revised(r), "no revision (forward)", True),
+     lambda r: not _revised(r), "no revision (forward)", False),
+
+    # ---- REGRESSION GUARD FOR THE FIX ----
+    # The mirror of N8: genuine reprogramming phrased with the SAME 'seeded with'
+    # construction. Because the cue keys off the substrate (not word order), the
+    # source seeded FROM a terminal state must still resolve backward and revise.
+    # This pins that the origin-cue fix did not create a false negative.
+    ("N9 backward via 'seeded with' — source arose from a seeded terminal (must still be caught)",
+     "PluripotentStemCell colonies arose in cultures seeded with Fibroblast cells, reproduced by many independent groups.",
+     lambda r: _revised(r) and not r.ood_flag, "revise (down)", False),
 ]
 
 
@@ -135,7 +146,7 @@ def sequence_probe():
 
 def main():
     print("=" * 74)
-    print("DIRECTION PROBE  (attacks both directions; N8 is a known, documented hole)")
+    print("DIRECTION PROBE  (attacks both directions; N8 'seeded with' hole now closed)")
     print("=" * 74)
     hard_pass = 0
     hard_total = 0
@@ -157,7 +168,7 @@ def main():
     hard_pass += sum(seq)
     hard_total += len(seq)
     print("-" * 74)
-    print(f"  {hard_pass}/{hard_total} enforced checks pass   (+1 known hole tracked as XFAIL)")
+    print(f"  {hard_pass}/{hard_total} enforced checks pass   (former N8 hole closed; N9 guards the fix)")
     print("=" * 74)
 
 
