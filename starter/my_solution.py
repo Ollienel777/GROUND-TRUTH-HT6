@@ -35,9 +35,9 @@ HIGH_CONF = 0.85    # a claim this confident, contradicted on thin evidence, is 
 # Provenance normalization (the trusted channel)
 # ---------------------------------------------------------------------------
 _WORD_NUM = {
-    "none": 0, "zero": 0, "no": 0, "single": 1, "one": 1, "lone": 1,
-    "couple": 2, "few": 2, "handful": 3, "some": 3, "multiple": 4,
-    "several": 4, "many": 6, "numerous": 6, "dozens": 12, "hundreds": 100,
+    "none": 0, "zero": 0, "no": 0, "single": 1, "one": 1, "once": 1, "lone": 1,
+    "couple": 2, "twice": 2, "few": 2, "thrice": 3, "handful": 3, "some": 3,
+    "multiple": 4, "several": 4, "many": 6, "numerous": 6, "dozens": 12, "hundreds": 100,
 }
 _DIRECTNESS = {"direct": 1.0, "indirect": 0.5, "inferred": 0.4, "correlational": 0.4}
 _EFFECT = {"strong": 1.0, "large": 1.0, "moderate": 0.6, "modest": 0.5, "weak": 0.3, "none": 0.0}
@@ -206,15 +206,17 @@ _AGE_KW = (
     "cellular age", "youthful",
 )
 _FUNC_KW = ("function", "functional", "metabolic", "secretory", "contractil",
-            "excitabil", "proliferat", "capacity", "performance")
+            "excitabil", "proliferat", "capacity", "performance", "output",
+            "activity", "capability", "efficiency", "workload")
 # Regex is more robust to phrasing than a fixed keyword list: matches
 # "without any change in ... identity", "identity was preserved/retained/intact",
-# "while remaining a <type>", etc.
+# "cell type was unchanged/preserved", "while remaining a <type>", etc.
 _IDENTITY_PRESERVED_RE = re.compile(
-    r"(?:without|no)[^.]{0,40}(?:chang\w+|alter\w+|loss|shift\w*)[^.]{0,40}identit"
+    r"(?:without|no)[^.]{0,40}(?:chang\w+|alter\w+|loss|shift\w*)[^.]{0,40}(?:identit|cell type|lineage identit)"
     r"|identit\w*[^.]{0,40}(?:unchang\w+|preserv\w+|retain\w+|intact|maintain\w+|same)"
+    r"|(?:cell )?type\w*[^.]{0,25}(?:unchang\w+|preserv\w+|retain\w+|intact|the same|unaltered)"
     r"|while remaining|same cell type|without changing its type|without altering identity"
-    r"|retain\w+ their identity|kept their identity",
+    r"|retain\w+ their identity|kept their identity|of the same cell type",
     re.IGNORECASE,
 )
 def _pick(options, key):
@@ -394,8 +396,10 @@ def ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
 
 
 def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
-    body = item.body or ""
-    prov = item.provenance or {}
+    # tolerate malformed inputs: a non-dict provenance or non-str body degrades to
+    # empty rather than crashing (a crash would score the item as a no-op anyway).
+    body = item.body if isinstance(item.body, str) else ""
+    prov = item.provenance if isinstance(item.provenance, dict) else {}
     b = body.lower()
 
     # Stage 0 — firewall. Embedded instructions are inert text.
