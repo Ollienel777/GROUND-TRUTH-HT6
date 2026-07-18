@@ -283,11 +283,22 @@ def _content(s: str):
     return {w for w in re.findall(r"[a-z]+", s.lower()) if len(w) > 3 and w not in _STOP}
 
 
+_CONFIRM_KW = (
+    "consistent", "confirm", "as expected", "replicat", "corroborat", "in line with",
+    "reaffirm", "support",
+    # well-powered confirmations are often phrased as a demonstration, not a
+    # "confirmation" — broaden so the strengthen-on-support signal is not missed.
+    "demonstrat", "verified", "well-powered", "well powered", "adequately powered",
+    "found that", "shows that", "showed that", "robust evidence", "provides evidence",
+)
+
+
 def _find_support_target(view: GraphView, body: str):
-    """Conservatively find a mid-confidence claim this result confirms."""
+    """Conservatively find a mid-confidence claim this result confirms. Only
+    mid-confidence claims (0.40..CEIL) are eligible, so this can only ever nudge a
+    genuinely contested belief, never a near-certain one."""
     b = body.lower()
-    if not any(k in b for k in ("consistent", "confirm", "as expected", "replicat",
-                                "corroborat", "in line with", "reaffirm", "support")):
+    if not any(k in b for k in _CONFIRM_KW):
         return None
     bw = _content(body)
     best, best_ov = None, 1
@@ -316,6 +327,28 @@ def _revise(eid, claim, s_scaled, direction):
 def _pending_id(states):
     names = "+".join(sorted(s.name for s in states)) or "unspecified"
     return f"pending::{names}"
+
+
+def _match_pending(view: GraphView, states):
+    """Find the held claim this item resolves. A retraction rarely repeats the
+    full subject, so we match by subject OVERLAP, not exact key: exact id first,
+    then any pending whose subject shares a named state, then — only when the item
+    names no state at all — the sole outstanding pending. Returns a pending id or
+    None. (Always keyed off named entities, never off free-text commands.)"""
+    pids = view.pending_ids()
+    if not pids:
+        return None
+    exact = _pending_id(states)
+    if exact in pids:
+        return exact
+    names = {s.name for s in states}
+    if names:
+        for p in pids:
+            subject = set(p.split("::", 1)[-1].split("+"))
+            if names & subject:
+                return p
+        return None  # a subject was named but nothing overlaps: do not guess
+    return pids[0] if len(pids) == 1 else None
 
 
 # ---------------------------------------------------------------------------
@@ -352,16 +385,25 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     # Retraction / failure-to-replicate — resolve a prior pending cleanly.
     # Keyed off STRUCTURED provenance only, never body phrasing.
     if structured_failure(prov):
-        pid = _pending_id(states)
-        if pid in view.pending_ids():
+        pid = _match_pending(view, states)
+        if pid is not None:
             return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
                                 "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
         return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
 
     # Stage 4 — in-model decision.
-    reversion = any(k in b for k in _REVERSION_KW)
+    # A contradiction of the "cannot go backward" law is recognised two ways: an
+    # explicit reversion keyword, OR structurally — a result that names a terminal
+    # state and reaches back toward the source (a potency-decreasing move) while not
+    # describing forward differentiation. The structural path catches strong
+    # reprogramming results phrased outside the keyword list.
+    source_cue = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
+    terminal_named = any(s.potency_level >= 3 for s in states)
+    forward = "differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b
+    structural_back = source_cue and terminal_named and not forward
+    reversion = any(k in b for k in _REVERSION_KW) or structural_back
     if reversion:
-        reaches_source = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
+        reaches_source = source_cue
         if reaches_source:
             target = _find_claim(view, ["return"], ["pluripoten", "source", "stem"])
         else:
@@ -385,8 +427,8 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
             return IngestResult([no_op(item.id)], "evidence too weak to move belief", 0.5, False)
 
         # Resolve a prior pending on the same subject that this result now confirms.
-        pid = _pending_id(states)
-        if pid in view.pending_ids():
+        pid = _match_pending(view, states)
+        if pid is not None:
             deltas.append(Delta("drop_claim", item.id, {"claim_id": pid}))
 
         # Scoped revision: narrow the claim to the mechanism that refutes it.

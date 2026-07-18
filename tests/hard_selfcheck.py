@@ -12,6 +12,13 @@ import math
 import os
 import sys
 
+# This report prints Δ (U+0394); on Windows the console defaults to cp1252 and
+# would crash on it. Force UTF-8 output where the stream supports reconfigure.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from groundtruth.loader import load_seed

@@ -97,6 +97,27 @@ CASES = [
      "A result claims Fibroblast returns to PluripotentStemCell, but the paper has since been retracted.",
      P("several", "several", "defined_factor_perturbation", retr="retracted"),
      "no mutation (retracted evidence)", lambda r: all(d.op in ("no_op", "propose_regime", "propose_axis", "hold_pending", "quarantine", "drop_claim") for d in r.deltas)),
+
+    # ---- RECALL gaps: correct behavior phrased outside the author's keyword lists ----
+    ("D1 well-powered confirmation of a contested claim, no 'confirm/consistent' cue",
+     "A well-powered study demonstrated that differentiated cells retain full nuclear developmental potential.",
+     P("many", "many", "observational"),
+     "strengthen (up), not no_op / ood",
+     lambda r: any(d.op == "revise_confidence" for d in r.deltas) and not r.ood_flag),
+
+    ("G1 strong reprogramming with NO reversion keyword (structural terminal->source)",
+     "Four independent groups showed Neuron cells can acquire a pluripotent stem cell state through defined-factor expression.",
+     P("many", 5, "defined_factor_perturbation"),
+     "revise (down) in-model, not ood",
+     lambda r: any(d.op == "revise_confidence" for d in r.deltas) and not r.ood_flag),
+
+    ("F1 THIN reprogramming, keywordless -> skepticism holds it pending",
+     "A single lab reports Neuron cells can acquire a pluripotent stem cell state. Not replicated.",
+     P(1, 1, "defined_factor_perturbation"),
+     "hold pending, no mutation",
+     lambda r: any(d.op == "hold_pending" for d in r.deltas)
+               and not any(d.op in ("revise_confidence", "set_scope", "set_status", "add_claim",
+                                     "add_entity", "add_edge", "drop_claim") for d in r.deltas)),
 ]
 
 
@@ -124,6 +145,27 @@ def sequence_probes():
     return results
 
 
+def pending_resolution_probes():
+    """The retraction that resolves a held claim rarely repeats the full subject
+    name. Resolution must match a pending by subject OVERLAP, not exact key."""
+    A = EvidenceItem("EP-A", "", "A single lab reports Neuron cells reverted to the PluripotentStemCell state at high efficiency. Not replicated.",
+                     P(1, 1, "defined_factor_perturbation"))
+    B = EvidenceItem("EP-B", "", "The earlier reprogramming result in Neuron cells has since been retracted by the authors.",
+                     P(1, 1, "defined_factor_perturbation", retr="retracted"))
+    g = load_seed()
+    a, b = run([A, B], ingest, g).records
+    checks = [
+        ("EP1 thin extraordinary claim -> hold pending", "hold_pending" in a.applied_ops),
+        ("EP2 partial-name retraction still resolves the pending (overlap match)",
+         "drop_claim" in b.applied_ops),
+    ]
+    results = []
+    for name, ok in checks:
+        results.append(ok)
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+    return results
+
+
 def main():
     print("=" * 72)
     print("ADVERSARIAL PROBE  (FAIL = a real blind spot to fix)")
@@ -142,8 +184,11 @@ def main():
     print("-" * 72)
     print("  SEQUENCE PROBES (pending resolution / drop_claim firewall):")
     seq = sequence_probes()
-    total_pass = n_pass + sum(seq)
-    total = len(CASES) + len(seq)
+    print("-" * 72)
+    print("  PENDING-RESOLUTION PROBES (overlap match, not exact key):")
+    pend = pending_resolution_probes()
+    total_pass = n_pass + sum(seq) + sum(pend)
+    total = len(CASES) + len(seq) + len(pend)
     print("-" * 72)
     print(f"  {total_pass}/{total} probes pass")
     print("=" * 72)
