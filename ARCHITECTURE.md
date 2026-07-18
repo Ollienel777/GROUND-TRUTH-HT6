@@ -235,16 +235,30 @@ probabilistic update → symbolic control — with the perception layer in rules
 1. **Structural OOD** (grounding/type-check layer) instead of lexical keywords.
 2. **Probabilistic log-odds calibration** instead of a tuned heuristic.
 
-The neural extraction layer (Tier 2) is now a genuine drop-in rather than a rewrite:
-because extraction is one seam emitting a typed frame, an LLM can replace `extract`
-by emitting the same `EvidenceFrame`, with the rules path as the deterministic
-fallback — valuable only with a model endpoint and open-ended input. Reassuringly,
-the hackathon path and the "build it for real" path point in the same direction.
+The neural extraction layer (Tier 2) is a genuine drop-in rather than a rewrite:
+because extraction is one seam emitting a typed frame, an LLM could replace
+`extract` by emitting the same `EvidenceFrame`, with the rules path as fallback.
+**But for the submission this is settled, not pending an endpoint:** the organizers
+have confirmed there is *no* model endpoint — the harness imports and calls `ingest`
+in-process, and the rules permit only the standard library — so a neural extractor
+is **out of scope for the submission; production-only.** The drop-in is a documented
+affordance of the seam, not a planned change.
 
-**A caveat so the two do not get conflated:** the Tier-1 structural work is a
-*within-A improvement*, not a step toward E. It needs no Bayesian core and no LLM;
-it is orthogonal to the A-vs-E choice. E's gravity should not be allowed to
-provoke a rewrite this domain will not pay for.
+Which means **the A-vs-E distinction has effectively collapsed for the submission.**
+What ships already *is* E's layering — perception (the `extract` seam) → grounding →
+probabilistic update (the log-odds pool) → symbolic control (the Delta API). The only
+thing that keeps the label "A" is that the perception layer runs in rules-mode — and
+with no endpoint, a closed fully-modeled domain, and no need, that is now permanent
+rather than provisional. The hackathon path and the "build it for real" path point
+the same way; we have simply reached the end of the hackathon one.
+
+**A caveat so the two are not conflated:** the Tier-1 *classification* work
+(direction, OOD) needs no Bayesian core and no LLM, so in that sense it is a
+*within-A improvement*. But the *seam refactor* is exactly what realized E's
+structural separation — so the code has E's shape with rules-mode perception, and
+"within-A" must not be read as "not E-structured." E's gravity should still not
+provoke a neural rewrite this domain will not pay for — and, with no endpoint, now
+cannot have.
 
 **Where the residual ceiling actually is — extraction, not classification.**
 Structural reasoning can only decide *once you know which states and what
