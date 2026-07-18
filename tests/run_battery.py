@@ -11,9 +11,11 @@ pass/fail. Two of the tracks depend on this being a reliable gate:
     maps to a revision, every OOD category is caught, and nothing gradable
     silently falls to no_op. One command re-confirms the whole surface.
 
-Most probes report via a printed summary rather than an exit code, so a probe is
-counted FAILED when it exits non-zero, prints a failure marker, or prints an
-"m/n" tally with m < n.
+Every probe now signals its own verdict via EXIT CODE (0 pass / non-zero fail),
+so the runner keys off the return code. The stdout parse (failure markers and
+"m/n" tallies with m < n) is kept only as a BACKUP net for any probe that is ever
+added without a proper exit code — it never overrides a clean exit-0 into a pass,
+only catches a probe that forgot to fail.
 
 Run:  python3 tests/run_battery.py     (exit 0 iff every probe passes)
 """
@@ -42,6 +44,13 @@ PROBES = [
     "hard_selfcheck",
 ]
 
+# Probes that live on an in-flight branch (PR #3) and are not yet in this tree.
+# Listed here so the battery auto-includes each the moment its file lands (e.g.
+# when PR #3 merges) — no further edit to PROBES needed. Until the file exists it
+# is reported as "pending", never counted as a pass, so a genuinely deleted probe
+# still surfaces as missing instead of silently dropping out of the gate.
+PENDING_PROBES = ["calibration_probe", "sequence_probe"]
+
 # A failure shows up one of three ways. Verdict words (FAIL/DIFFER) are matched
 # LINE-ANCHORED so explanatory header prose ("FAIL = a real blind spot") and
 # "XFAIL" (a tracked/expected hole) are not mistaken for a failing run. The rest
@@ -56,6 +65,8 @@ _TALLY = re.compile(r"\b(\d+)/(\d+)\b")
 
 
 def _failed(code: int, out: str) -> bool:
+    # Return code is the primary signal; the stdout parse is a backup for any probe
+    # that ever forgets to exit non-zero on failure.
     if code != 0:
         return True
     if _FAIL_LINE.search(out) or any(rx.search(out) for rx in _FAIL_SUBSTR):
@@ -67,8 +78,12 @@ def main():
     print("=" * 70)
     print("BATTERY  (all probes + guards must pass)")
     print("=" * 70)
+    # Auto-include any pending probe whose file has since landed in the tree.
+    active = list(PROBES) + [p for p in PENDING_PROBES
+                             if os.path.exists(os.path.join(HERE, f"{p}.py"))]
+    pending = [p for p in PENDING_PROBES if p not in active]
     failures = []
-    for name in PROBES:
+    for name in active:
         path = os.path.join(HERE, f"{name}.py")
         r = subprocess.run([sys.executable, path], cwd=ROOT,
                            capture_output=True, text=True)
@@ -79,11 +94,15 @@ def main():
             failures.append(name)
             for line in out.strip().splitlines()[-6:]:
                 print(f"          | {line}")
+    for name in pending:
+        print(f"  ....  {name}  (pending — not yet in this branch)")
     print("-" * 70)
     if failures:
         print(f"  {len(failures)} FAILED: {', '.join(failures)}")
     else:
-        print(f"  ALL {len(PROBES)} PROBES PASS")
+        print(f"  ALL {len(active)} PROBES PASS")
+    if pending:
+        print(f"  {len(pending)} pending (auto-activate on merge): {', '.join(pending)}")
     print("=" * 70)
     sys.exit(1 if failures else 0)
 

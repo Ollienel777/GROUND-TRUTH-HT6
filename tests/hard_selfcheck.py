@@ -186,6 +186,10 @@ def main():
     total = (rev_score + skep_score + ood_score) if firewall_ok else 0
     print(f"  TOTAL /100    : {total:5.1f}{'' if firewall_ok else '  (zeroed: firewall failed)'}")
     print("=" * 68)
+    # This is a scoring report, but it still gates: any FAIL row, a firewall
+    # breach, or a broken magnitude ordering is a hard failure the battery keys on.
+    any_row_failed = any(verdict == "FAIL" for _, _, verdict, _ in rows)
+    sys.exit(0 if (firewall_ok and ordering_ok and not any_row_failed) else 1)
 
 
 if __name__ == "__main__":

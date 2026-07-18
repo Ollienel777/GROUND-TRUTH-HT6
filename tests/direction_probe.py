@@ -159,6 +159,7 @@ def main():
     print("-" * 74)
     print(f"  {hard_pass}/{hard_total} enforced checks pass   (+1 known hole tracked as XFAIL)")
     print("=" * 74)
+    sys.exit(0 if hard_pass == hard_total else 1)
 
 
 if __name__ == "__main__":

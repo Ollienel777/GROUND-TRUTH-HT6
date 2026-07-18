@@ -186,6 +186,15 @@ def looks_like_injection(body: str) -> bool:
 # FORMS of each body n-gram and probe cell_state on each. This stays pure
 # classification (which entities are named) — no magnitude, no command — so the
 # firewall is untouched.
+#
+# KNOWN EDGES (accepted, not bugs):
+#   * Over-match: every body token is probed against cell_state, so a hidden graph
+#     that renamed an entity to a common English word would over-fire on ordinary
+#     prose. Very unlikely in practice (renames are distinctive) and unfixable
+#     without a stop-word notion that would itself re-introduce hardcoded names.
+#   * Abbreviation synonymy is deliberately NOT resolved: matching "PSC" to
+#     "pluripotent stem cell" needs a synonym table, i.e. hardcoded names, which
+#     the format-agnostic contract forbids. Left as a tracked follow-up.
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 _MAX_NGRAM = 4          # longest spaced entity name we expect ("intestinal epithelial cell")
 _JOINS = ("", " ", "-", "_")   # separators a graph name might use between words
@@ -629,7 +638,12 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     touches nothing downstream. The firewall scan runs earlier, on raw body, in
     trusted code — it is deliberately NOT routed through this possibly-neural step."""
     b = body.lower()
-    spans = find_state_spans(view, body)
+    # Resolve on the lowercased body so span offsets index the SAME string that
+    # transition_direction() slices (b). cell_state is case-insensitive, so this is
+    # verdict-identical to resolving on `body`, but it removes the ASCII-only
+    # assumption that .lower() preserves offsets — an exotic unicode char whose
+    # lowercase changes length would otherwise drift the spans against b.
+    spans = find_state_spans(view, b)
     seen, states = set(), []
     for _, _, cs in spans:
         if cs.name not in seen:

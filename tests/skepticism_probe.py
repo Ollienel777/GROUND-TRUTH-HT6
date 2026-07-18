@@ -67,6 +67,7 @@ def main():
     print("-" * 74)
     print(f"  {len(CASES) - len(reds)}/{len(CASES)} pass" + ("" if not reds else f"  |  RED: {[n.split()[0] for n in reds]}"))
     print("=" * 74)
+    sys.exit(1 if reds else 0)
 
 
 if __name__ == "__main__":
