@@ -719,11 +719,12 @@ def _pending_id(states):
 
 
 def _match_pending(view: GraphView, states):
-    """Find the held claim this item resolves. A retraction rarely repeats the
-    full subject, so we match by subject OVERLAP, not exact key: exact id first,
-    then any pending whose subject shares a named state, then — only when the item
-    names no state at all — the sole outstanding pending. Returns a pending id or
-    None. (Always keyed off named entities, never off free-text commands.)"""
+    """Resolve the held claim this item resolves by the most specific uniquely
+    matching subject. Exact endpoint sets win. For partial references, terminal /
+    origin states carry more identity than a shared source state (many pending
+    claims may all end at pluripotency), so a source-only overlap that several
+    pendings share is ambiguous and abstains rather than dropping an unrelated
+    claim. (Always keyed off named entities, never off free-text commands.)"""
     pids = view.pending_ids()
     if not pids:
         return None
@@ -732,11 +733,22 @@ def _match_pending(view: GraphView, states):
         return exact
     names = {s.name for s in states}
     if names:
-        for p in pids:
-            subject = set(p.split("::", 1)[-1].split("+"))
-            if names & subject:
-                return p
-        return None  # a subject was named but nothing overlaps: do not guess
+        non_source = {s.name for s in states if s.potency_level > 1}
+        scored = []
+        for pid in pids:
+            subject = set(pid.split("::", 1)[-1].split("+"))
+            overlap = names & subject
+            if overlap:
+                scored.append(((len(overlap & non_source), len(overlap), -len(subject - names)), pid))
+        if not scored:
+            return None  # a subject was named but nothing overlaps: do not guess
+        scored.sort(reverse=True)
+        # A source-only overlap is ambiguous when several pendings share it.
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return None
+        if scored[0][0][0] == 0 and len(pids) > 1:
+            return None
+        return scored[0][1]
     return pids[0] if len(pids) == 1 else None
 
 
@@ -768,7 +780,18 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     states = frame.entities
     S = strength(prov)
 
-    # Stage 3 — out-of-distribution (before any revision; precision-first).
+    # Retraction / failure-to-replicate is a structured-channel veto and resolves a
+    # prior pending BEFORE semantic OOD routing, so incidental words in a retraction
+    # notice ("aged Fibroblast cells", etc.) cannot be routed as an OOD result and
+    # strand the held claim. Keyed off STRUCTURED provenance only, never body phrasing.
+    if structured_failure(prov):
+        pid = _match_pending(view, states)
+        if pid is not None:
+            return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
+                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
+        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
+
+    # Stage 3 — out-of-distribution (before any live-evidence revision; precision-first).
     kind, name = decide_ood(frame, view)
     if kind == "axis":
         return IngestResult([Delta("propose_axis", item.id, {"axis": name})],
@@ -776,15 +799,6 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     if kind == "regime":
         return IngestResult([Delta("propose_regime", item.id, {"regime": name})],
                             f"out-of-model regime: {name}", 0.7, True)
-
-    # Retraction / failure-to-replicate — resolve a prior pending cleanly.
-    # Keyed off STRUCTURED provenance only, never body phrasing.
-    if structured_failure(prov):
-        pid = _match_pending(view, states)
-        if pid is not None:
-            return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
-                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
-        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
 
     # Polarity / modality / predication guard (NegEx/ConText-style, computed in the
     # perception seam). A reversion cue that is NEGATED ("did not revert"), HYPOTHETICAL
