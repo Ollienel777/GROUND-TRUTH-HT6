@@ -88,6 +88,15 @@ def is_thin(prov: dict) -> bool:
     return _num(prov.get("independent_groups", 0)) <= 1 and _num(prov.get("replication_count", 0)) <= 1
 
 
+def single_source(prov: dict) -> bool:
+    """No INDEPENDENT reproduction: at most one independent group, regardless of how
+    many times that one source repeated internally. Many internal repeats by a single
+    lab are not independent confirmation of an extraordinary claim — independence, not
+    raw replication count, is what the skepticism axis turns on. (A fabricated fraud
+    is a single source; it may still assert a high internal replication_count.)"""
+    return _num(prov.get("independent_groups", 0)) <= 1
+
+
 def is_retracted(prov: dict) -> bool:
     return str(prov.get("retraction_status", "none")).lower() in ("retracted", "withdrawn", "corrected")
 
@@ -572,11 +581,14 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
         if target is None:
             return IngestResult([no_op(item.id)], "contradiction but no target claim", 0.5, False)
 
-        # Skepticism gate: thin, single-source, unreplicated evidence must never
-        # drive a revision — hold it pending instead. This is independent of the
-        # claim's *current* confidence (a prior strong result may already have
-        # moved it); it keys off provenance thinness, not the belief's value.
-        if is_thin(prov) and (target.confidence >= 0.5 or target.epistemic_status == "established"):
+        # Skepticism gate: a SINGLE-SOURCE result (not independently reproduced)
+        # must never drive a revision of a believed claim — hold it pending instead.
+        # Keys off INDEPENDENCE (independent_groups), not internal replication_count:
+        # one lab repeating itself many times is not independent confirmation, and a
+        # fabricated fraud can inflate replication_count while remaining a single
+        # source. Independent of the claim's current confidence (a prior strong
+        # result may already have moved it).
+        if single_source(prov) and (target.confidence >= 0.5 or target.epistemic_status == "established"):
             pid = _pending_id(states)
             note = f"unreplicated extraordinary claim re: {', '.join(s.name for s in states) or 'unspecified'}"
             return IngestResult([Delta("hold_pending", item.id, {"claim_id": pid, "note": note})],

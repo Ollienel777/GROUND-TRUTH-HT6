@@ -65,9 +65,14 @@ firewall + calibration + OOD. Provenance magnitude comes from the structured
 channel, never the LLM.
 - **Strengths:** robust extraction across wording; firewall stays symbolic;
   auditable decision; scales to open text.
-- **Weaknesses:** LLM nondeterminism (mitigable: temp 0, schema-constrained,
-  fallback); extraction errors propagate; calibration still only a heuristic
-  unless the decision layer is made probabilistic.
+- **Weaknesses:** LLM nondeterminism — and note **temp 0 does *not* fix this**:
+  inference lacks batch invariance, so identical requests can return different
+  outputs depending on server-side batching (documented; only batch-invariant
+  kernels give bitwise-identical results). The workable mitigation is to persist
+  the extracted `EvidenceFrame` as the **deterministic artifact of record** (replay
+  and audit run from frames, not from re-running the model), with a rules fallback.
+  Also: extraction errors propagate; calibration stays a heuristic unless the
+  decision layer is made probabilistic.
 - **Verdict:** the right *skeleton*; becomes optimal once the decision core is
   genuinely probabilistic (→ E).
 
@@ -114,11 +119,17 @@ two defining properties and should be avoided despite being the easiest to ship.
 **neural perception → symbolic grounding → probabilistic reasoning → symbolic control**
 
 1. **Extraction (neural, *untrusted*).** LLM under constrained/structured decoding
-   (JSON-schema function calling, temperature 0) turns each document into a typed
-   `EvidenceFrame`: referenced entities linked to graph node IDs, the asserted
-   transition/relation, the claimed phenomenon, and an extraction-faithfulness
-   score. Optional self-consistency/ensemble. **Provenance is taken from the
-   structured channel, never from the LLM.**
+   (JSON-schema function calling; temperature 0 to reduce — not eliminate —
+   variance) turns each document into a typed `EvidenceFrame`: referenced entities
+   linked to graph node IDs, the asserted transition/relation, the claimed
+   phenomenon, and an extraction-faithfulness score. Optional
+   self-consistency/ensemble. **Provenance is taken from the structured channel,
+   never from the LLM.** Determinism is *not* claimed for the model call (see C's
+   weaknesses on batch invariance); the persisted `EvidenceFrame` is the
+   deterministic artifact of record, and replay/audit run from it. A caveat on
+   constrained decoding itself: JSON-mode can tax reasoning, so if direction
+   resolution is done by the LLM, decouple it — reason free-form, then emit the
+   constrained frame — rather than forcing schema output during the inference step.
 
 2. **Grounding & type-check (symbolic).** Resolve entities to real nodes; check
    whether the asserted transition is *expressible* under the schema's
@@ -149,19 +160,45 @@ two defining properties and should be avoided despite being the easiest to ship.
 
 ## The invariant that makes it manipulation-proof
 
-> **Separate the trusted-magnitude channel from the untrusted-proposal channel,
-> with a re-grounding validator between them.**
+> **Confine every untrusted input to a narrow, typed, auditable interface, and
+> compute magnitude only from the *structured* interface — never from free text —
+> with a re-grounding validator between proposal and write.**
 
-The LLM (untrusted) may only emit a *typed proposal* from a closed vocabulary;
-that proposal is re-validated against ground truth; and the *magnitude* of any
-belief change is computed by trusted code from structured provenance — never from
-the LLM or the body text.
+An earlier draft called this "separate the *trusted*-magnitude channel from the
+untrusted-proposal channel." That was an overclaim, and it is worth correcting
+precisely, because the mistake hides where the real defense lives. There are **two
+untrusted inputs, not one**:
 
-**Consequence:** a fully prompt-injected LLM can at worst *mislabel a transition*,
-which the structural/type-check catches. It can never set a confidence, delete a
-claim, or inflate provenance. This is layered defense — closed vocabulary →
-re-grounding → trusted-magnitude → attribution/caps — and it is provable, not
-heuristic. It is the single most important property of the design.
+1. **Free body text.** The LLM/extractor reads it and may only emit a *typed
+   proposal* from a closed vocabulary, re-validated against ground truth. Magnitude
+   is never read from it. This is what the firewall guarantees, and it is
+   structural (no code path exists) — a fully prompt-injected extractor can at
+   worst *mislabel a transition*, which the structural/type-check catches.
+2. **The structured provenance.** This is **also adversary-authored** — the item's
+   author supplies `independent_groups`, `effect_strength`, etc. It is *schema-valid*,
+   not *honest*. Computing magnitude from it deterministically does not make it
+   trustworthy; it only means the adversary must attack through this **narrow,
+   typed, auditable interface instead of through free text.**
+
+So the honest statement of the guarantee is: **the firewall confines the adversary
+to the provenance interface; the skepticism prior defends that interface.** The
+weighting/thinness logic (small on single-source, near-zero on noise, hold-don't-
+rewrite on extraordinary-but-thin) is therefore doing **security work, not just
+calibration** — and must be tested *adversarially*, not just epistemically. The
+announced fabricated-fraud item in the hidden set is precisely an attack on this
+"trusted" channel: it arrives as valid provenance and is caught only because its
+provenance is *thin*, not because the text is recognized.
+
+**What is and isn't provable here:** the *no-text-to-magnitude* property is
+provable (structural). Robustness to *dishonest-but-valid provenance* is not — it
+is a prior, and in this challenge's schema it is also *bounded by the data*: the
+provenance fields carry no source identity, so dependent/copied "replications"
+cannot be detected or even represented. A high-count fabrication would be
+undetectable by construction — which is why the organizers' fabricated item must be
+thin, and why thinness is the right thing to key on. Layered defense — closed
+vocabulary → re-grounding → provenance-only magnitude → attribution/caps → an
+adversarially-tested skepticism prior — with an honest line drawn between the parts
+that are provable and the part that is a prior.
 
 ---
 
@@ -187,9 +224,12 @@ heuristic. It is the single most important property of the design.
 The code today is architecture **A**, which is the correct skeleton: all
 body-reading is confined to one perception seam, `extract(body, view) →
 EvidenceFrame` (enforced by `seam_guard.py`), the decision core consumes only the
-typed frame, and the firewall runs first on raw body *outside* the seam. That is the
-E layering already — perception → grounding → probabilistic update → symbolic
-control — with the perception layer in rules-mode. The two upgrades that sharpen the
+typed frame, and the firewall runs first on raw body *outside* the seam. (This
+ordering is code-verified, not just asserted: `looks_like_injection` executes before
+`extract` in `_ingest`, and `tests/seam_guard.py` fails if any body text is read
+outside the seam — the specific things an external reviewer flagged as
+"unverified.") That is the E layering already — perception → grounding →
+probabilistic update → symbolic control — with the perception layer in rules-mode. The two upgrades that sharpen the
 **E** core are exactly the Tier-1 items in `IMPROVEMENTS.md`:
 
 1. **Structural OOD** (grounding/type-check layer) instead of lexical keywords.
@@ -228,9 +268,11 @@ there. Two empirical results bound this:
 
 ## Technology notes (for the production build)
 
-- **Extraction:** constrained decoding / JSON-schema function calling; entity
-  linking to node IDs; temperature 0; self-consistency for robustness; a
-  rules-based fallback path.
+- **Extraction:** constrained decoding / JSON-schema function calling (decoupled
+  from any free-form reasoning step to avoid the format tax); entity linking to
+  node IDs; temperature 0 as a variance reducer, **not** a determinism guarantee —
+  persist the `EvidenceFrame` as the artifact of record and replay from it;
+  self-consistency for robustness; a rules-based fallback path.
 - **Reasoning core:** a PGM library or a hand-rolled log-odds engine; provenance
   dimensions as likelihood ratios; explicit priors for skepticism.
 - **Graph + firewall:** a typed graph store (e.g. TypeDB / Datalog-style) where
