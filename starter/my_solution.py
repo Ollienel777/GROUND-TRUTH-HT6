@@ -119,8 +119,8 @@ def structured_failure(prov: dict) -> bool:
 _INJECTION_PHRASES = (
     "set the confidence", "set confidence", "set it to", "set to certain",
     "mark as certain", "ignore prior", "ignore previous", "ignore all",
-    "disregard prior", "disregard previous", "overwrite", "override the",
-    "override this", "delete claim", "drop claim", "remove the claim",
+    "disregard prior", "disregard previous", "overwrite",
+    "delete claim", "drop claim", "remove the claim",
     "processor note", "system note", "admin", "you must set", "must set",
     "force the", "update the confidence", "assistant", "instruction:",
     # natural-language directives that try to dictate belief state without evidence
@@ -130,7 +130,7 @@ _INJECTION_PHRASES = (
     "permanently set", "lock the confidence", "hard-code", "hardcode",
     "record this belief", "make this authoritative", "update your belief",
     "the knowledge base should", "knowledge base to", "regard this as certain",
-    "treat as established", "treat as certain", "set all", "override prior",
+    "treat as established", "treat as certain", "set all",
     "ignore the provenance", "ignore provenance", "disregard the provenance",
 )
 _BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence",
@@ -141,8 +141,26 @@ _BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence"
 _INJECTION_NOSPACE = (
     "settheconfidence", "setconfidence", "deleteclaim", "dropclaim",
     "removetheclaim", "ignoreprior", "ignoreprevious", "markascertain",
-    "forcethe", "updatetheconfidence", "overridethe", "ignoreprovenance",
+    "forcethe", "updatetheconfidence", "ignoreprovenance",
 )
+# "Override" is also ordinary scientific language (override a barrier/pathway).
+# Treat it as a directive only when it targets graph/control vocabulary, so a
+# legitimate "override the developmental barrier" is no longer flagged.
+_INJECTION_OVERRIDE_RE = re.compile(
+    r"\boverride\s+(?:the\s+)?(?:prior|previous|provenance|"
+    # "confidence" is control vocab EXCEPT the statistical collocation
+    # ("confidence interval/bound/level/limit"), which is ordinary science.
+    r"confidence(?!\s+(?:interval|bound|level|limit)s?)|"
+    r"claim|belief|knowledge\s+base|instruction|rules?)\b", re.IGNORECASE)
+# De-spaced twin of the above, matched against a whitespace-stripped body so the
+# same control-vocabulary targeting also defeats no-space ("overridetheconfidence")
+# and letter-spacing ("o v e r r i d e ... confidence") evasion — both of which
+# collapse to a form the \s+ regex above cannot see. Still targeted (never bare
+# "override") to preserve the low-false-positive intent.
+_INJECTION_OVERRIDE_NOSPACE_RE = re.compile(
+    r"override(?:the)?(?:prior|previous|provenance|"
+    r"confidence(?!(?:interval|bound|level|limit)s?)|"
+    r"claim|belief|knowledgebase|instruction|rules?)")
 
 
 def _normalize_for_scan(body: str) -> str:
@@ -161,7 +179,9 @@ def looks_like_injection(body: str) -> bool:
     letters = re.sub(r"\b([a-z])(?:\s+([a-z])\b)+", lambda m: m.group(0).replace(" ", ""), norm)
     nospace = re.sub(r"\s+", "", norm)
 
-    if any(p in collapsed or p in letters for p in _INJECTION_PHRASES):
+    if (any(p in collapsed or p in letters for p in _INJECTION_PHRASES)
+            or _INJECTION_OVERRIDE_RE.search(collapsed)
+            or _INJECTION_OVERRIDE_NOSPACE_RE.search(nospace)):
         return True
     if any(p in nospace for p in _INJECTION_NOSPACE):
         return True
@@ -200,19 +220,44 @@ _MAX_NGRAM = 4          # longest spaced entity name we expect ("intestinal epit
 _JOINS = ("", " ", "-", "_")   # separators a graph name might use between words
 
 
+def _singular(word: str) -> str:
+    """Conservative morphology for ENTITY MENTIONS only (never scientific facts):
+    fold a plural surface form back to its singular so "fibroblasts" resolves to the
+    graph's "Fibroblast". Deliberately narrow — only regular -ies/-s plurals, never
+    -ss/-us — because over-stemming would corrupt grounding rather than help it."""
+    low = word.casefold()
+    if len(word) > 4 and low.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and low.endswith("s") and not low.endswith(("ss", "us")):
+        return word[:-1]
+    return word
+
+
 def _resolve_ngram(view: GraphView, words):
     """Probe cell_state() on each plausible surface form of a word sequence. cell_state
     is case-insensitive, so we only vary the separator: "" (CamelCase/lowercase run),
-    " " (spaced), "-"/"_" (hyphen/snake). First hit wins."""
+    " " (spaced), "-"/"_" (hyphen/snake). We also try conservative singular forms
+    (last word, then all words) so plural mentions ground to their singular graph
+    name. First hit wins."""
+    # Word-form variants: as written, last word singularized, all words singularized.
+    variants = [words]
+    last_singular = words[:-1] + [_singular(words[-1])]
+    if last_singular != words:
+        variants.append(last_singular)
+    all_singular = [_singular(w) for w in words]
+    if all_singular != words and all_singular not in variants:
+        variants.append(all_singular)
+
     seen = set()
-    for sep in _JOINS:
-        cand = sep.join(words)
-        if cand in seen:
-            continue
-        seen.add(cand)
-        cs = view.cell_state(cand)
-        if cs is not None:
-            return cs
+    for ws in variants:
+        for sep in _JOINS:
+            cand = sep.join(ws)
+            if cand in seen:
+                continue
+            seen.add(cand)
+            cs = view.cell_state(cand)
+            if cs is not None:
+                return cs
     return None
 
 
@@ -249,7 +294,13 @@ def find_states(view: GraphView, body: str):
     return out
 
 
-_ORIGIN_CUE = re.compile(r"(?:from|out of|derived from|starting from|originating from)\s+$", re.IGNORECASE)
+# Source-material cues: the state that FOLLOWS is the origin. Beyond the plain
+# "from" family this also covers oblique source-material roles ("seeded with") and
+# passive production ("generated by"), which place the source after the verb and
+# would otherwise fall to the backward default (the former direction_probe N8 hole).
+_ORIGIN_CUE = re.compile(
+    r"(?:from|out of|derived from|starting from|originating from|seeded with|"
+    r"(?:generated|produced|yielded|formed|created)\s+by)\s+$", re.IGNORECASE)
 
 # Connectives that genuinely denote a transition, establishing "first -> last".
 # Deliberately NOT a bare "to": ambiguous linkers ("compared to", "relative to")
@@ -300,8 +351,8 @@ def transition_direction(body_lower: str, spans):
         return None
     (idx_first, end_first, first), (idx_last, _end_last, last) = distinct[0], distinct[-1]
     between = body_lower[end_first:idx_last]
-    if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 24):idx_last]):
-        origin, dest = last, first            # "... produced from <state>"
+    if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 64):idx_last]):
+        origin, dest = last, first            # "... produced from / seeded with <state>"
     elif _DIR_CONNECTIVE.search(between):
         origin, dest = first, last            # "<state> gave rise to / into <state>"
     elif "," not in between and _ACTIVE_PRODUCTION.match(between):
@@ -703,11 +754,12 @@ def _pending_id(states):
 
 
 def _match_pending(view: GraphView, states):
-    """Find the held claim this item resolves. A retraction rarely repeats the
-    full subject, so we match by subject OVERLAP, not exact key: exact id first,
-    then any pending whose subject shares a named state, then — only when the item
-    names no state at all — the sole outstanding pending. Returns a pending id or
-    None. (Always keyed off named entities, never off free-text commands.)"""
+    """Resolve the held claim this item resolves by the most specific uniquely
+    matching subject. Exact endpoint sets win. For partial references, terminal /
+    origin states carry more identity than a shared source state (many pending
+    claims may all end at pluripotency), so a source-only overlap that several
+    pendings share is ambiguous and abstains rather than dropping an unrelated
+    claim. (Always keyed off named entities, never off free-text commands.)"""
     pids = view.pending_ids()
     if not pids:
         return None
@@ -716,11 +768,22 @@ def _match_pending(view: GraphView, states):
         return exact
     names = {s.name for s in states}
     if names:
-        for p in pids:
-            subject = set(p.split("::", 1)[-1].split("+"))
-            if names & subject:
-                return p
-        return None  # a subject was named but nothing overlaps: do not guess
+        non_source = {s.name for s in states if s.potency_level > 1}
+        scored = []
+        for pid in pids:
+            subject = set(pid.split("::", 1)[-1].split("+"))
+            overlap = names & subject
+            if overlap:
+                scored.append(((len(overlap & non_source), len(overlap), -len(subject - names)), pid))
+        if not scored:
+            return None  # a subject was named but nothing overlaps: do not guess
+        scored.sort(reverse=True)
+        # A source-only overlap is ambiguous when several pendings share it.
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return None
+        if scored[0][0][0] == 0 and len(pids) > 1:
+            return None
+        return scored[0][1]
     return pids[0] if len(pids) == 1 else None
 
 
@@ -752,7 +815,18 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     states = frame.entities
     S = strength(prov)
 
-    # Stage 3 — out-of-distribution (before any revision; precision-first).
+    # Retraction / failure-to-replicate is a structured-channel veto and resolves a
+    # prior pending BEFORE semantic OOD routing, so incidental words in a retraction
+    # notice ("aged Fibroblast cells", etc.) cannot be routed as an OOD result and
+    # strand the held claim. Keyed off STRUCTURED provenance only, never body phrasing.
+    if structured_failure(prov):
+        pid = _match_pending(view, states)
+        if pid is not None:
+            return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
+                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
+        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
+
+    # Stage 3 — out-of-distribution (before any live-evidence revision; precision-first).
     kind, name = decide_ood(frame, view)
     if kind == "axis":
         return IngestResult([Delta("propose_axis", item.id, {"axis": name})],
@@ -760,15 +834,6 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     if kind == "regime":
         return IngestResult([Delta("propose_regime", item.id, {"regime": name})],
                             f"out-of-model regime: {name}", 0.7, True)
-
-    # Retraction / failure-to-replicate — resolve a prior pending cleanly.
-    # Keyed off STRUCTURED provenance only, never body phrasing.
-    if structured_failure(prov):
-        pid = _match_pending(view, states)
-        if pid is not None:
-            return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
-                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
-        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
 
     # Polarity / modality / predication guard (NegEx/ConText-style, computed in the
     # perception seam). A reversion cue that is NEGATED ("did not revert"), HYPOTHETICAL
