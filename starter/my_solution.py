@@ -177,16 +177,66 @@ def looks_like_injection(body: str) -> bool:
 # ---------------------------------------------------------------------------
 # Stage 2 — semantic parse (classification only)
 # ---------------------------------------------------------------------------
-def find_states(view: GraphView, body: str):
-    """Resolve CamelCase-ish tokens in the body against real graph states."""
-    seen, out = set(), []
-    for tok in re.findall(r"\b([A-Z][A-Za-z0-9]{2,})\b", body):
-        if tok in seen:
+# Entity resolution is FORMAT-AGNOSTIC. The hidden graph renames every entity, and
+# nothing guarantees the surface form the body uses matches the graph's own casing
+# or word separators — a state stored as `PluripotentStemCell` may be written
+# "pluripotent stem cell", "pluripotent-stem-cell", or lowercased. GraphView has no
+# list-states API, only cell_state(name) (an exact, case-insensitive lookup), so we
+# cannot enumerate names and normalize them; instead we enumerate candidate SURFACE
+# FORMS of each body n-gram and probe cell_state on each. This stays pure
+# classification (which entities are named) — no magnitude, no command — so the
+# firewall is untouched.
+_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+_MAX_NGRAM = 4          # longest spaced entity name we expect ("intestinal epithelial cell")
+_JOINS = ("", " ", "-", "_")   # separators a graph name might use between words
+
+
+def _resolve_ngram(view: GraphView, words):
+    """Probe cell_state() on each plausible surface form of a word sequence. cell_state
+    is case-insensitive, so we only vary the separator: "" (CamelCase/lowercase run),
+    " " (spaced), "-"/"_" (hyphen/snake). First hit wins."""
+    seen = set()
+    for sep in _JOINS:
+        cand = sep.join(words)
+        if cand in seen:
             continue
-        seen.add(tok)
-        cs = view.cell_state(tok)
+        seen.add(cand)
+        cs = view.cell_state(cand)
         if cs is not None:
-            out.append(cs)
+            return cs
+    return None
+
+
+def find_state_spans(view: GraphView, body: str):
+    """Resolve graph states named in the body, returned as (start, end, CellState)
+    spans in body order. Greedy LONGEST-match, left to right, non-overlapping: a
+    3-word name wins over its 2-word prefix, and tokens consumed by a match are not
+    reused (so "stem cell" inside "pluripotent stem cell" cannot double-fire)."""
+    toks = [(m.group(), m.start(), m.end()) for m in _TOKEN_RE.finditer(body)]
+    spans, i, n = [], 0, len(toks)
+    while i < n:
+        hit = None
+        for size in range(min(_MAX_NGRAM, n - i), 0, -1):
+            cs = _resolve_ngram(view, [toks[k][0] for k in range(i, i + size)])
+            if cs is not None:
+                hit = (toks[i][1], toks[i + size - 1][2], cs, size)
+                break
+        if hit is not None:
+            spans.append((hit[0], hit[1], hit[2]))
+            i += hit[3]
+        else:
+            i += 1
+    return spans
+
+
+def find_states(view: GraphView, body: str):
+    """Distinct graph states named in the body, first-occurrence order."""
+    seen, out = set(), []
+    for _, _, cs in find_state_spans(view, body):
+        if cs.name in seen:
+            continue
+        seen.add(cs.name)
+        out.append(cs)
     return out
 
 
@@ -211,7 +261,7 @@ _DIR_CONNECTIVE = re.compile(
 _ACTIVE_PRODUCTION = re.compile(r"^\s*(?:\w+\s+){0,2}(?:produc|generat|yield)\w*\s", re.IGNORECASE)
 
 
-def transition_direction(body_lower: str, states):
+def transition_direction(body_lower: str, spans):
     """Resolve (origin -> destination) and return 'forward' | 'backward' | None.
 
     Direction is decided by comparing potency, which grounds it in the graph's own
@@ -229,12 +279,18 @@ def transition_direction(body_lower: str, states):
     cue is not positive evidence: unresolved returns None and the caller defaults
     to backward, so failing to resolve is always the cheap error.
     """
-    named = sorted(((body_lower.find(s.name.lower()), s) for s in states
-                    if body_lower.find(s.name.lower()) >= 0), key=lambda t: t[0])
-    if len(named) < 2:
+    # Distinct states in first-occurrence order, located by their ACTUAL matched span
+    # (not by re-searching for the canonical name, which need not be a literal
+    # substring of a reformatted body — "pluripotent stem cell" vs PluripotentStemCell).
+    distinct, seen = [], set()
+    for start, end, cs in sorted(spans, key=lambda t: t[0]):
+        if cs.name not in seen:
+            seen.add(cs.name)
+            distinct.append((start, end, cs))
+    if len(distinct) < 2:
         return None
-    (idx_first, first), (idx_last, last) = named[0], named[-1]
-    between = body_lower[idx_first + len(first.name):idx_last]
+    (idx_first, end_first, first), (idx_last, _end_last, last) = distinct[0], distinct[-1]
+    between = body_lower[end_first:idx_last]
     if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 24):idx_last]):
         origin, dest = last, first            # "... produced from <state>"
     elif _DIR_CONNECTIVE.search(between):
@@ -573,7 +629,12 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     touches nothing downstream. The firewall scan runs earlier, on raw body, in
     trusted code — it is deliberately NOT routed through this possibly-neural step."""
     b = body.lower()
-    states = find_states(view, body)
+    spans = find_state_spans(view, body)
+    seen, states = set(), []
+    for _, _, cs in spans:
+        if cs.name not in seen:
+            seen.add(cs.name)
+            states.append(cs)
     clauses = _split_clauses(body)
     entity_clauses = [find_states(view, c) for c in clauses]
     asserted, negated, hypothetical, comparative = _scan_reversion(clauses)
@@ -594,7 +655,7 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     return EvidenceFrame(
         entities=states,
         entity_clauses=entity_clauses,
-        direction=transition_direction(b, states),
+        direction=transition_direction(b, spans),
         reaches_source=any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW),
         is_reversion=asserted,
         negated=negated,
