@@ -6,6 +6,31 @@
 
 ---
 
+## Current status (event-ready baseline)
+
+**Submission is complete and passing.** `starter/my_solution.py` (~500 LOC) implements
+the full Stage 0–6 pipeline; `DESIGN.md` is written. All checks green:
+
+| Suite | What it covers | Result |
+|-------|----------------|--------|
+| `selfcheck.py` | official practice sandbox (PR01–PR06) | PASS (firewall ok, OOD 1/0/0) |
+| `tests/hard_selfcheck.py` | 12-item stream on real seed, approximates the 4 axes | 100/100 |
+| `tests/adversarial_probe.py` | unfamiliar wording, injection evasion, spoof, sequences | 27/27 |
+| `tests/trajectory_probe.py` | cumulative confidence shape (no creep / bounded / no rebound) | 3/3 |
+| `tests/ood_subtype_probe.py` | `propose_axis` vs `propose_regime` + correct name | 6/6 |
+| `tests/malformed_provenance_probe.py` | missing/garbage/non-dict inputs degrade gracefully | 11/11 |
+
+**Hardening done:** structural + keyword classification (generalizes off names/IDs);
+injection detector normalizes unicode/zero-width and defeats letter-spacing; failure
+resolution keys off structured provenance only (no body-triggered `drop_claim`);
+non-dict provenance / non-str body degrade to no-op without crashing.
+
+**Known nature of the approach:** classification is keyword+structural, which is
+robust but inherently brittle to wording the hidden set may use. See `IMPROVEMENTS.md`
+for the plan to raise the ceiling beyond edge-case coverage.
+
+---
+
 ## 0. What the project is
 
 Implement **one function**, `ingest(item, view)`, called once per evidence item in
