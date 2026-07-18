@@ -137,6 +137,7 @@ def main():
     print("-" * 74)
     print(f"  {n}/{len(CASES)} paraphrases preserve the verdict")
     print("=" * 74)
+    sys.exit(0 if n == len(CASES) else 1)
 
 
 if __name__ == "__main__":

@@ -88,6 +88,7 @@ def main():
     else:
         print("  all expressible provenance attacks handled")
     print("=" * 76)
+    sys.exit(1 if findings else 0)
 
 
 if __name__ == "__main__":

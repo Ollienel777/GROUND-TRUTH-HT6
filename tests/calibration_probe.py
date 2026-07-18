@@ -119,6 +119,7 @@ def main():
     print("-" * 76)
     print(f"  {len(checks) - len(reds)}/{len(checks)} pass" + ("" if not reds else f"  |  RED: {[n.split()[0] for n in reds]}"))
     print("=" * 76)
+    sys.exit(1 if reds else 0)
 
 
 if __name__ == "__main__":

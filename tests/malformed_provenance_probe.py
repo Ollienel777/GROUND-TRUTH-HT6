@@ -70,6 +70,7 @@ def main():
     print("-" * 72)
     print(f"  {n}/{len(CASES)} malformed-input checks pass")
     print("=" * 72)
+    sys.exit(0 if n == len(CASES) else 1)
 
 
 if __name__ == "__main__":
