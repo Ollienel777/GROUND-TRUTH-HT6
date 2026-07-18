@@ -289,6 +289,106 @@ _IDENTITY_PRESERVED_RE = re.compile(
     r"|retain\w+ their identity|kept their identity|of the same cell type",
     re.IGNORECASE,
 )
+
+# --- polarity / modality / predication: the extractor's blind spots ----------
+# A flat keyword match sees "revert" in "did NOT revert" and "more potent" in a
+# static "IS more potent THAN" comparison, and reads both as reprogramming events.
+# These regexes let `extract` down-weight a cue that is negated, hypothetical, or
+# merely comparative — no event asserted, so no revision. They live in the seam
+# (referenced only inside `extract`) and are guarded by seam_guard's FORBIDDEN set.
+
+# Negation cues. "no longer" is EXCLUDED — "irreversibility no longer holds" is a
+# reprogramming assertion, not a null result. Present-ability "can"/"can be" is NOT
+# negation (only "cannot"/"can't"/"could not"), so factual "cells can be driven to
+# ..." is unaffected.
+_NEG_RE = re.compile(
+    r"\b(?:did\s+not|do\s+not|does\s+not|didn't|doesn't|don't|was\s+not|were\s+not|"
+    r"wasn't|weren't|is\s+not|are\s+not|isn't|aren't|has\s+not|have\s+not|hasn't|haven't|"
+    r"cannot|can't|could\s+not|couldn't|would\s+not|wouldn't|"
+    r"not|no(?!\s+longer)|never|none|neither|nor|"
+    r"fail(?:s|ed|ing)?\s+to|unable\s+to|without|absence\s+of|lack(?:ed|s|ing)?\s+of|"
+    r"no\s+such|no\s+evidence)\b",
+    re.IGNORECASE,
+)
+# A negated / null RESULT anywhere in the body ("no reprogramming was observed",
+# "no dedifferentiation was detected", "failed to return"), independent of a
+# windowed keyword hit.
+_NEG_RESULT_RE = re.compile(
+    r"\bno(?!\s+longer)\b[^.,;]{0,50}\b(?:observ|report|detect|seen|found|success|"
+    r"revert|reversion|reprogram|dedifferentiat|de-differentiat|conversion|return|change)\w*"
+    r"|\b(?:not|never|failed\s+to|fail\s+to|unable\s+to|did\s+not|was\s+not|were\s+not|"
+    r"could\s+not|cannot|couldn't)\b[^.,;]{0,50}\b(?:observ|report|detect|seen|found|"
+    r"revert|reprogram|return|convert|dedifferentiat|de-differentiat|restore|regain|acquire)\w*",
+    re.IGNORECASE,
+)
+# Modality / conditional framing: describes no experiment. "can"/"can be" is
+# deliberately absent (it states a factual ability, not a hypothesis).
+_MODAL_RE = re.compile(
+    r"\b(?:if|would|could|might|may|hypothetical\w*|were\s+to|suppose\w*|assuming|"
+    r"conceivably|in\s+principle|in\s+theory)\b",
+    re.IGNORECASE,
+)
+# Unambiguous hypothetical markers that essentially never describe a real confirmed
+# result, checked over the WHOLE body (not just the keyword window) — this catches
+# subject-aux inversion ("Were Fibroblast cells to revert ...") and a trailing
+# "this remains hypothetical", where the modal cue is far from the reversion word.
+_HYP_GLOBAL_RE = re.compile(
+    r"\bhypothetical\w*\b|\bin\s+principle\b|\bin\s+theory\b|\bconceivably\b|"
+    r"\bpurely\s+theoretical\b|"
+    r"\bwere\s+\w+(?:\s+\w+){0,3}\s+to\s+"
+    r"(?:revert|return|be\b|become|acquire|regain|dedifferentiat|de-differentiat|roll|drive|driven)",
+    re.IGNORECASE,
+)
+# Static comparison ("X IS more potent THAN Y"): a copula + comparative on a
+# potency/maturity adjective + "than". No transition verb, so no event. A genuine
+# change verb ("became more potent") uses no copula and is NOT matched here.
+_COMPARATIVE_RE = re.compile(
+    r"\b(?:is|are|was|were|be|been|being|remain\w*|stay\w*|seem\w*|appear\w*|rank\w*)\b"
+    r"[^.,;]{0,30}\b(?:more|less|as|equally)\b[^.,;]{0,20}"
+    r"\b(?:potent|primitive|committed|mature|specialized|differentiated|flexible|"
+    r"restricted|advanced)\w*\b[^.,;]{0,25}\bthan\b",
+    re.IGNORECASE,
+)
+# Sentence / clause splitter for clause-scoped locality tests.
+_SENT_SPLIT = re.compile(r"[.;:!?\n]+|,\s*(?:separately|meanwhile|whereas|in\s+contrast|"
+                         r"in\s+a\s+separate|independently|by\s+contrast)\b")
+
+
+def _clause_lateral(view: "GraphView", body: str) -> bool:
+    """CLAUSE-SCOPED lateral test: two equal-potency, distinct-lineage states are a
+    lateral pair ONLY if they co-occur in the SAME sentence/clause. A distractor
+    state named in another clause ("Neuron populations were profiled. Separately,
+    Fibroblast -> PSC ...") must not manufacture a lateral jump and mask the real
+    in-model contradiction. Perception-layer (reads raw text); seam-allowlisted."""
+    for sent in _SENT_SPLIT.split(body):
+        sts = find_states(view, sent)
+        for a in sts:
+            for c in sts:
+                if a is not c and a.potency_level == c.potency_level \
+                        and a.lineage_identity != c.lineage_identity:
+                    return True
+    return False
+
+
+def _negated_or_hypothetical(b: str) -> tuple[bool, bool]:
+    """Polarity + modality of the transition/reversion cue. Negation and modality
+    are checked in a short window BEFORE each reversion keyword (so "did not revert",
+    "if ... could be driven back" are caught) and, for negation, also as a
+    whole-body negated-result phrase. Perception-layer; seam-allowlisted."""
+    neg = bool(_NEG_RESULT_RE.search(b))
+    hyp = bool(_HYP_GLOBAL_RE.search(b))
+    for kw in _REVERSION_KW:
+        start = b.find(kw)
+        while start != -1:
+            pre = b[max(0, start - 42):start]
+            if _NEG_RE.search(pre):
+                neg = True
+            if _MODAL_RE.search(pre):
+                hyp = True
+            start = b.find(kw, start + 1)
+    return neg, hyp
+
+
 def _pick(options, key):
     head = key.split("_")[0]
     for o in options or []:
@@ -307,10 +407,7 @@ def decide_ood(frame: "EvidenceFrame", view: GraphView):
     axes_excluded = dom.axes_excluded if dom else []
     regimes_not = dom.regimes_not_modeled if dom else []
 
-    lateral_struct = any(
-        a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
-        for a in states for c in states if a is not c
-    )
+    lateral_struct = frame.lateral_pair
     potency_changes = any(a.potency_level != c.potency_level for a in states for c in states if a is not c)
 
     # A modeled transition (reprogramming toward the source, or any potency move
@@ -437,6 +534,10 @@ class EvidenceFrame:
     identity_preserved: bool       # "identity unchanged/preserved" phrasing
     is_confirmation: bool          # confirming-evidence phrasing
     content_words: set             # content tokens, for support-claim grounding
+    is_negated: bool = False       # the reversion/transition cue is negated (null result)
+    is_hypothetical: bool = False  # conditional/modal framing — no experiment asserted
+    is_comparison: bool = False    # static comparative ("is more potent than"), no event
+    lateral_pair: bool = False     # equal-potency distinct-lineage states in the SAME clause
 
 
 def extract(body: str, view: GraphView) -> EvidenceFrame:
@@ -448,6 +549,7 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     trusted code — it is deliberately NOT routed through this possibly-neural step."""
     b = body.lower()
     states = find_states(view, body)
+    neg, hyp = _negated_or_hypothetical(b)
     return EvidenceFrame(
         entities=states,
         direction=transition_direction(b, states),
@@ -460,6 +562,10 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
         identity_preserved=bool(_IDENTITY_PRESERVED_RE.search(body)),
         is_confirmation=any(k in b for k in _CONFIRM_KW),
         content_words=_content(body),
+        is_negated=neg,
+        is_hypothetical=hyp,
+        is_comparison=bool(_COMPARATIVE_RE.search(b)),
+        lateral_pair=_clause_lateral(view, body),
     )
 
 
@@ -571,7 +677,15 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
         # direction unresolved: default to the newsworthy reading, except that a
         # bare 'differentiat' mention is itself positive evidence of forward.
         structural_back = source_cue and terminal_named and not frame.is_forward_worded
-    reversion = frame.is_reversion or structural_back
+    # A reversion cue (keyword or structural potency-increase) only counts as a
+    # contradiction if an EVENT is actually asserted. Perception flags three ways it
+    # is not: a negated / null result ("did not revert", "no reprogramming observed"),
+    # a hypothetical / conditional ("if cells could be driven back ... no such
+    # result"), or a static comparison ("is more potent than"). Each asserts no
+    # transition, so the correct move is no revision — a failed reprogramming attempt
+    # is in fact evidence FOR irreversibility, never against it.
+    event_suppressed = frame.is_negated or frame.is_hypothetical or frame.is_comparison
+    reversion = (frame.is_reversion or structural_back) and not event_suppressed
     if reversion:
         reaches_source = source_cue
         if reaches_source:
@@ -626,7 +740,9 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
                             0.5 + 0.4 * S, False)
 
     # Confirmation — slight strengthen of a mid-confidence belief, else no_op.
-    support = _find_support_target(view, frame)
+    # A hypothetical or negated statement asserts no result, so it is not
+    # confirming evidence either.
+    support = None if (frame.is_hypothetical or frame.is_negated) else _find_support_target(view, frame)
     if support is not None:
         deltas = _revise(item.id, support, S * 0.5, direction=+1)
         if deltas:

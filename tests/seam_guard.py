@@ -31,6 +31,7 @@ SRC = os.path.join(ROOT, "starter", "my_solution.py")
 ALLOWED = {
     "extract", "find_states", "transition_direction",
     "_normalize_for_scan", "looks_like_injection",
+    "_clause_lateral", "_negated_or_hypothetical",
 }
 
 # The vocabulary of raw-text reading. A leaked body-read references one of these
@@ -38,6 +39,7 @@ ALLOWED = {
 FORBIDDEN_NAMES = {
     "_REVERSION_KW", "_SOURCE_KW", "_LATERAL_KW", "_AGE_KW", "_FUNC_KW", "_CONFIRM_KW",
     "_IDENTITY_PRESERVED_RE", "_DIR_CONNECTIVE", "_ACTIVE_PRODUCTION", "_ORIGIN_CUE",
+    "_NEG_RE", "_NEG_RESULT_RE", "_MODAL_RE", "_HYP_GLOBAL_RE", "_COMPARATIVE_RE", "_SENT_SPLIT",
 }
 FORBIDDEN_STR = "differentiat"
 
