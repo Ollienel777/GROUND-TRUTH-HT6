@@ -18,6 +18,7 @@ Pipeline: 0 firewall -> 1 strength -> 2 parse -> 3 OOD -> 4 decision -> 5 magnit
 from __future__ import annotations
 import re
 import unicodedata
+from dataclasses import dataclass
 
 from groundtruth.deltas import Delta, no_op
 from groundtruth.ingest import EvidenceItem, IngestResult
@@ -287,17 +288,16 @@ def _pick(options, key):
     return key
 
 
-def classify_ood(view: GraphView, body: str, states):
+def decide_ood(frame: "EvidenceFrame", view: GraphView):
     """Return (kind, name) where kind in {'axis','regime',None}. Precision-first:
     default to in-model unless the evidence clearly matches an excluded axis or a
-    non-modeled regime from the domain declaration."""
-    b = body.lower()
+    non-modeled regime from the domain declaration. Consumes the frame; the only
+    graph reasoning here is structural (potency/lineage over resolved entities)."""
+    states = frame.entities
     dom = view.domain()
     axes_excluded = dom.axes_excluded if dom else []
     regimes_not = dom.regimes_not_modeled if dom else []
 
-    reversion = any(k in b for k in _REVERSION_KW)
-    reaches_source = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
     lateral_struct = any(
         a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
         for a in states for c in states if a is not c
@@ -308,7 +308,7 @@ def classify_ood(view: GraphView, body: str, states):
     # between represented states) means an exotic-sounding word — "aged",
     # "identity", etc. — is incidental to an IN-MODEL event, not the phenomenon.
     # This is the precision guard against the near-miss trap.
-    in_model_transition = reaches_source or potency_changes
+    in_model_transition = frame.reaches_source or potency_changes
 
     # 1. non-modeled REGIME: a lateral jump between equal-potency, distinct
     #    identities (structural, highest confidence).
@@ -317,16 +317,16 @@ def classify_ood(view: GraphView, body: str, states):
 
     # 2. excluded AXIS: a property the model does not track at all.
     if not in_model_transition:
-        if any(k in b for k in _AGE_KW):
+        if frame.is_aging:
             return "axis", _pick(axes_excluded, "biological_age")
-        if _IDENTITY_PRESERVED_RE.search(body):
-            if any(k in b for k in _FUNC_KW):
+        if frame.identity_preserved:
+            if frame.is_function:
                 return "axis", _pick(axes_excluded, "cell_function_independent_of_identity")
             return "regime", _pick(regimes_not, "identity_preserving_state_change")
 
     # 3. keyword-only lateral (single state named): only when nothing on the
     #    modeled potency axis is happening.
-    if any(k in b for k in _LATERAL_KW) and not potency_changes and not reversion:
+    if frame.is_lateral and not potency_changes and not frame.is_reversion:
         return "regime", _pick(regimes_not, "lateral_somatic_conversion")
 
     return None, None
@@ -387,14 +387,14 @@ _CONFIRM_KW = (
 )
 
 
-def _find_support_target(view: GraphView, body: str):
+def _find_support_target(view: GraphView, frame: "EvidenceFrame"):
     """Conservatively find a mid-confidence claim this result confirms. Only
     mid-confidence claims (0.40..CEIL) are eligible, so this can only ever nudge a
-    genuinely contested belief, never a near-certain one."""
-    b = body.lower()
-    if not any(k in b for k in _CONFIRM_KW):
+    genuinely contested belief, never a near-certain one. Grounding (which claim the
+    content overlaps) stays in the decision layer; the frame supplies the signal."""
+    if not frame.is_confirmation:
         return None
-    bw = _content(body)
+    bw = frame.content_words
     best, best_ov = None, 1
     for cid in view.list_claim_ids():
         c = view.get_claim(cid)
@@ -404,6 +404,54 @@ def _find_support_target(view: GraphView, body: str):
         if ov > best_ov:
             best, best_ov = c, ov
     return best
+
+
+# ---------------------------------------------------------------------------
+# Perception layer: the SINGLE reader of raw evidence text
+# ---------------------------------------------------------------------------
+@dataclass
+class EvidenceFrame:
+    """Structured classification signals extracted from the untrusted body — the
+    one contract between perception (`extract`) and the decision core. Every field
+    is a fact *about the text* (which states, what direction, what phenomenon cues);
+    none carries magnitude or a command, so routing all body-reading through here is
+    the firewall by construction. These field names are also the schema an LLM
+    extractor would fill."""
+    entities: list                 # resolved graph CellState nodes
+    direction: str | None          # 'forward' | 'backward' | None
+    reaches_source: bool           # a source-potency state or a source-ward word
+    is_reversion: bool             # explicit reversion keyword
+    is_forward_worded: bool        # a bare 'differentiat' mention (forward cue)
+    is_lateral: bool               # lateral/transdifferentiation keyword
+    is_aging: bool                 # biological-age axis words
+    is_function: bool              # cell-function axis words
+    identity_preserved: bool       # "identity unchanged/preserved" phrasing
+    is_confirmation: bool          # confirming-evidence phrasing
+    content_words: set             # content tokens, for support-claim grounding
+
+
+def extract(body: str, view: GraphView) -> EvidenceFrame:
+    """The SOLE reader of raw evidence text. Turns the untrusted body into a typed
+    frame of classification signals and nothing else — no number, no command, no
+    magnitude. The decision core consumes the frame and never the body, so swapping
+    this for an LLM (temperature 0, emitting the same frame, rules as the fallback)
+    touches nothing downstream. The firewall scan runs earlier, on raw body, in
+    trusted code — it is deliberately NOT routed through this possibly-neural step."""
+    b = body.lower()
+    states = find_states(view, body)
+    return EvidenceFrame(
+        entities=states,
+        direction=transition_direction(b, states),
+        reaches_source=any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW),
+        is_reversion=any(k in b for k in _REVERSION_KW),
+        is_forward_worded=("differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b),
+        is_lateral=any(k in b for k in _LATERAL_KW),
+        is_aging=any(k in b for k in _AGE_KW),
+        is_function=any(k in b for k in _FUNC_KW),
+        identity_preserved=bool(_IDENTITY_PRESERVED_RE.search(body)),
+        is_confirmation=any(k in b for k in _CONFIRM_KW),
+        content_words=_content(body),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -460,17 +508,21 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     # empty rather than crashing (a crash would score the item as a no-op anyway).
     body = item.body if isinstance(item.body, str) else ""
     prov = item.provenance if isinstance(item.provenance, dict) else {}
-    b = body.lower()
 
-    # Stage 0 — firewall. Embedded instructions are inert text.
+    # Stage 0 — firewall. Embedded instructions are inert text. Runs on the raw
+    # body in trusted code, BEFORE perception, so a flagged item is never even
+    # handed to the (possibly-neural) extractor.
     if looks_like_injection(body):
         return IngestResult([no_op(item.id)], "embedded instruction ignored (firewall)", 0.95, False)
 
-    states = find_states(view, body)
+    # Perception: the one and only read of raw body. Everything below consumes the
+    # frame, never the text.
+    frame = extract(body, view)
+    states = frame.entities
     S = strength(prov)
 
     # Stage 3 — out-of-distribution (before any revision; precision-first).
-    kind, name = classify_ood(view, body, states)
+    kind, name = decide_ood(frame, view)
     if kind == "axis":
         return IngestResult([Delta("propose_axis", item.id, {"axis": name})],
                             f"out-of-model axis: {name}", 0.7, True)
@@ -499,10 +551,9 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     # back to backward. (Do not "improve" this by inferring direction from word
     # order: that reads "PSC colonies emerged after Fibroblast cells were treated"
     # as forward and silently drops a strong contradiction.)
-    source_cue = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
-    terminal_named = any(s.potency_level >= 3 for s in states)
-    direction = transition_direction(b, states)   # 'forward' | 'backward' | None
-    reversion_kw = any(k in b for k in _REVERSION_KW)
+    source_cue = frame.reaches_source
+    terminal_named = any(s.potency_level >= 3 for s in states)   # structural, from entities
+    direction = frame.direction                    # 'forward' | 'backward' | None
     if direction == "backward":
         structural_back = True                     # parsed potency increase: contradicts C1
     elif direction == "forward":
@@ -510,9 +561,8 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     else:
         # direction unresolved: default to the newsworthy reading, except that a
         # bare 'differentiat' mention is itself positive evidence of forward.
-        worded_forward = "differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b
-        structural_back = source_cue and terminal_named and not worded_forward
-    reversion = reversion_kw or structural_back
+        structural_back = source_cue and terminal_named and not frame.is_forward_worded
+    reversion = frame.is_reversion or structural_back
     if reversion:
         reaches_source = source_cue
         if reaches_source:
@@ -564,7 +614,7 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
                             0.5 + 0.4 * S, False)
 
     # Confirmation — slight strengthen of a mid-confidence belief, else no_op.
-    support = _find_support_target(view, body)
+    support = _find_support_target(view, frame)
     if support is not None:
         deltas = _revise(item.id, support, S * 0.5, direction=+1)
         if deltas:
