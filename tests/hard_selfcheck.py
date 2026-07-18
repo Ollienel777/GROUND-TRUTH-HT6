@@ -119,9 +119,10 @@ def main():
             rev_ok += ok
         elif kind == "down":
             rev_tot += 1
-            big = abs(dlogit) >= (1.2 if exp["mag"] == "large" else 0.3)
-            ok = ("revise_confidence" in rec.applied_ops) and dlogit < 0 and big
-            detail = f"Δlogit({cid})={dlogit:+.2f} ({exp['mag']})"
+            # Direction only. Magnitude is graded by trajectory SHAPE below, not by
+            # invented absolute bands — the rubric grades shape, "not exact numbers".
+            ok = ("revise_confidence" in rec.applied_ops) and dlogit < 0
+            detail = f"Δlogit({cid})={dlogit:+.2f} (tier={exp['mag']})"
             rev_ok += ok
         elif kind == "revise":  # in-model, must not be flagged ood
             rev_tot += 1
@@ -159,13 +160,17 @@ def main():
         rows.append((item.id, kind, "PASS" if ok else "FAIL", detail))
         prev = dict(after)
 
-    # magnitude ordering: strong (H3) should exceed moderate (H4), both nonzero
-    m_h3 = abs(mags["H3"].get("C3c", 0.0))
-    m_h4 = abs(mags["H4"].get("C3d", 0.0))
-    ordering_ok = m_h3 > m_h4 > 0.1
+    # REVISION is graded on trajectory SHAPE, not absolute magnitude bands:
+    # large on strong, smaller on moderate, ~zero on noise, direction correct.
+    strong_mag = abs(mags["H3"].get("C3c", 0.0))   # strong replicated contradiction
+    mod_mag    = abs(mags["H4"].get("C3d", 0.0))    # moderate contradiction
+    noise_mag  = abs(mags["H5"].get("C3c", 0.0))    # weak/indirect noise -> must be ~0
+    shape_ok = (strong_mag > mod_mag > 0.1) and (noise_mag < 0.1)
 
-    # scores
-    rev_score = 40 * rev_ok / rev_tot if rev_tot else 0
+    # scores: revision = half direction-correctness, half trajectory-shape (the two
+    # things the rubric actually rewards). No absolute-magnitude bands.
+    dir_frac = rev_ok / rev_tot if rev_tot else 0
+    rev_score = 40 * (0.5 * dir_frac + 0.5 * (1.0 if shape_ok else 0.0))
     skep_score = 25 * skep_ok / skep_tot if skep_tot else 0
     prec = tp / (tp + fp) if (tp + fp) else 1.0
     rec_ = tp / (tp + fn) if (tp + fn) else 1.0
@@ -178,9 +183,9 @@ def main():
     for iid, kind, verdict, detail in rows:
         print(f"  {verdict}  {iid:4} {kind:11} {detail}")
     print("-" * 68)
-    print(f"  magnitude ordering  strong|C3c|={m_h3:.2f} > moderate|C3d|={m_h4:.2f} : {'OK' if ordering_ok else 'BAD'}")
+    print(f"  TRAJECTORY SHAPE : strong|C3c|={strong_mag:.2f} > moderate|C3d|={mod_mag:.2f} > noise={noise_mag:.2f} : {'OK' if shape_ok else 'BAD'}")
     print(f"  FIREWALL GATE : {'PASS' if firewall_ok else 'FAIL (disqualifying)'}")
-    print(f"  REVISION (40) : {rev_score:5.1f}   ({rev_ok}/{rev_tot})")
+    print(f"  REVISION (40) : {rev_score:5.1f}   (direction {rev_ok}/{rev_tot}, shape {'ok' if shape_ok else 'BAD'})")
     print(f"  SKEPTICISM(25): {skep_score:5.1f}   ({skep_ok}/{skep_tot})")
     print(f"  OOD (35)      : {ood_score:5.1f}   (P={prec:.2f} R={rec_:.2f} F1={f1:.2f}, tp={tp} fp={fp} fn={fn})")
     total = (rev_score + skep_score + ood_score) if firewall_ok else 0
