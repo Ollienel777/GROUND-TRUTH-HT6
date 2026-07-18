@@ -119,8 +119,8 @@ def structured_failure(prov: dict) -> bool:
 _INJECTION_PHRASES = (
     "set the confidence", "set confidence", "set it to", "set to certain",
     "mark as certain", "ignore prior", "ignore previous", "ignore all",
-    "disregard prior", "disregard previous", "overwrite", "override the",
-    "override this", "delete claim", "drop claim", "remove the claim",
+    "disregard prior", "disregard previous", "overwrite",
+    "delete claim", "drop claim", "remove the claim",
     "processor note", "system note", "admin", "you must set", "must set",
     "force the", "update the confidence", "assistant", "instruction:",
     # natural-language directives that try to dictate belief state without evidence
@@ -130,7 +130,7 @@ _INJECTION_PHRASES = (
     "permanently set", "lock the confidence", "hard-code", "hardcode",
     "record this belief", "make this authoritative", "update your belief",
     "the knowledge base should", "knowledge base to", "regard this as certain",
-    "treat as established", "treat as certain", "set all", "override prior",
+    "treat as established", "treat as certain", "set all",
     "ignore the provenance", "ignore provenance", "disregard the provenance",
 )
 _BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence",
@@ -141,8 +141,22 @@ _BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence"
 _INJECTION_NOSPACE = (
     "settheconfidence", "setconfidence", "deleteclaim", "dropclaim",
     "removetheclaim", "ignoreprior", "ignoreprevious", "markascertain",
-    "forcethe", "updatetheconfidence", "overridethe", "ignoreprovenance",
+    "forcethe", "updatetheconfidence", "ignoreprovenance",
 )
+# "Override" is also ordinary scientific language (override a barrier/pathway).
+# Treat it as a directive only when it targets graph/control vocabulary, so a
+# legitimate "override the developmental barrier" is no longer flagged.
+_INJECTION_OVERRIDE_RE = re.compile(
+    r"\boverride\s+(?:the\s+)?(?:prior|previous|provenance|confidence|claim|belief|"
+    r"knowledge\s+base|instruction|rules?)\b", re.IGNORECASE)
+# De-spaced twin of the above, matched against a whitespace-stripped body so the
+# same control-vocabulary targeting also defeats no-space ("overridetheconfidence")
+# and letter-spacing ("o v e r r i d e ... confidence") evasion — both of which
+# collapse to a form the \s+ regex above cannot see. Still targeted (never bare
+# "override") to preserve the low-false-positive intent.
+_INJECTION_OVERRIDE_NOSPACE_RE = re.compile(
+    r"override(?:the)?(?:prior|previous|provenance|confidence|claim|belief|"
+    r"knowledgebase|instruction|rules?)")
 
 
 def _normalize_for_scan(body: str) -> str:
@@ -161,7 +175,9 @@ def looks_like_injection(body: str) -> bool:
     letters = re.sub(r"\b([a-z])(?:\s+([a-z])\b)+", lambda m: m.group(0).replace(" ", ""), norm)
     nospace = re.sub(r"\s+", "", norm)
 
-    if any(p in collapsed or p in letters for p in _INJECTION_PHRASES):
+    if (any(p in collapsed or p in letters for p in _INJECTION_PHRASES)
+            or _INJECTION_OVERRIDE_RE.search(collapsed)
+            or _INJECTION_OVERRIDE_NOSPACE_RE.search(nospace)):
         return True
     if any(p in nospace for p in _INJECTION_NOSPACE):
         return True
