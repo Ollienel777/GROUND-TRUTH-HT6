@@ -165,7 +165,10 @@ def main():
     strong_mag = abs(mags["H3"].get("C3c", 0.0))   # strong replicated contradiction
     mod_mag    = abs(mags["H4"].get("C3d", 0.0))    # moderate contradiction
     noise_mag  = abs(mags["H5"].get("C3c", 0.0))    # weak/indirect noise -> must be ~0
-    shape_ok = (strong_mag > mod_mag > 0.1) and (noise_mag < 0.1)
+    # A modest absolute floor on the strong move keeps "large on strong" honest —
+    # a qualitative "moved meaningfully" guard, not a precise magnitude band, so an
+    # under-powered strong drop can't earn full credit just by beating moderate.
+    shape_ok = (strong_mag > 0.8) and (strong_mag > mod_mag > 0.1) and (noise_mag < 0.1)
 
     # scores: revision = half direction-correctness, half trajectory-shape (the two
     # things the rubric actually rewards). No absolute-magnitude bands.

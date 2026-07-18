@@ -22,9 +22,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from groundtruth.loader import load_seed
 from groundtruth.harness import run
 from groundtruth.ingest import EvidenceItem
+from starter.my_solution import ingest
 
 TRACK = ["C1", "C2", "C3a", "C3b", "C3c", "C3d", "C3g", "C4", "C5", "C6"]
-MUT = ("revise_confidence", "set_scope", "set_status", "add_claim", "add_entity", "add_edge", "drop_claim")
 
 
 def P(groups, repl, effect="strong", direct="direct", retr="none", method="defined_factor_perturbation"):
@@ -44,7 +44,7 @@ def E(i, body, prov):
 def run_stream(items):
     g = load_seed()
     seed = {c: g.claims[c].confidence for c in TRACK}
-    log = run(items, ingest_fn=__import__("starter.my_solution", fromlist=["ingest"]).ingest, graph=g)
+    log = run(items, ingest, g)
     return seed, log, g
 
 
@@ -63,12 +63,13 @@ def main():
     checks.append(("SEQ1 15 noise items -> zero drift", drift < 1e-9, f"max drift={drift:.2e}"))
 
     # SEQ2 — 10 moderate corroborations of C3c: monotone non-increasing, bounded, converging
+    c3c0 = load_seed().claims["C3c"].confidence   # reference prior, derived not hardcoded
     items = [E(i, REPRO_FIB, P(3, 2, effect="moderate")) for i in range(10)]
     _, log, _ = run_stream(items)
     traj = [rec.conf_snapshot["C3c"] for rec in log.records]
     monotone = all(a >= b - 1e-9 for a, b in zip(traj, traj[1:]))
-    bounded = min(traj) >= 0.02 - 1e-9 and traj[0] < 0.92
-    step_shrinks = abs(_L(traj[-2]) - _L(traj[-1])) <= abs(_L(traj[0]) - _L(0.92)) + 1e-9
+    bounded = min(traj) >= 0.02 - 1e-9 and traj[0] < c3c0
+    step_shrinks = abs(_L(traj[-2]) - _L(traj[-1])) <= abs(_L(traj[0]) - _L(c3c0)) + 1e-9
     checks.append(("SEQ2 moderate corroboration -> monotone, bounded, converging",
                    monotone and bounded and step_shrinks, f"traj={[round(x,3) for x in traj]}"))
 
