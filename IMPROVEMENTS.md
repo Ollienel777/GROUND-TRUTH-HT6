@@ -15,6 +15,22 @@ closed a whole *class* of misses that no keyword list would have caught reliably
    harness).
 The keyword broadenings done alongside these were worth far less.
 
+**But read the second one as a cautionary tale, not a victory.** Its first version
+replaced the `"differentiat"` crutch with a *word-order* crutch, and thereby
+introduced a **worse** bug: a strong replicated reprogramming result that names the
+destination first ("PSC colonies emerged after Fibroblast cells received defined
+factors") was read as forward and silently dropped — a false negative on the 40-pt
+axis, where the code it replaced was correct. It shipped green: the paraphrase
+harness passed 12/12, because the same author wrote the fix and its tests and only
+imagined one of the two failure directions. **Two lessons, both now load-bearing:**
+- **A structural fix is not automatically a better fix.** Swapping one lexical
+  crutch for another is lateral movement. Ask what the new crutch assumes (here:
+  English subject-first word order) and whether the *default* it implies is safe.
+- **Green from a suite you wrote alongside the fix is not evidence.** Adversarial
+  probes must attack **both** directions of a rule, and known holes must be
+  recorded as visible `XFAIL`s (see `tests/direction_probe.py` N8) rather than
+  quietly omitted — an unrecorded hole is how the first one survived.
+
 ---
 
 ## The architectural tension, resolved
@@ -39,11 +55,22 @@ direction (a small, stable one)**:
 - **Entities:** proven not to be name-coupled — the renamed-seed harness is 12/12
   identical. (Residual gap: `find_states` is CamelCase-only, so lowercase
   multi-word entity phrases still lean on `_SOURCE_KW`.)
-- **Direction:** now parsed from word order + a few origin prepositions
-  (`transition_direction`) and decided by potency comparison — no longer hinged on
-  the `"differentiat"` substring. Small stable vocabulary, but still lexical; this
-  is where residual brittleness lives and where new harness failures should be
-  hunted.
+- **Direction:** resolved by `transition_direction` from *positive evidence only* —
+  an origin cue (`"produced from <state>"`) or a transition connective linking the
+  pair (`"gave rise to"`, `"into"`, `"toward"`) — then decided by **potency
+  comparison**, never by the `"differentiat"` substring and **never by bare word
+  order**. Grounded in the graph's own law: C1 says transitions do not increase
+  potency, and `potency_level` is inverted, so a destination of *lower*
+  potency_level is the C1-violating (newsworthy) reading. The two directions are
+  asymmetric — a missed reprogramming is a false negative on the biggest axis,
+  while source→terminal is already near-certain under C5 and is never news — so
+  **forward must be positively evidenced and anything unresolved defaults to
+  backward.**
+  *Known residual (tracked, `direction_probe.py` N8):* a genuinely-forward result
+  using an unrecognized connective and omitting "differentiat" defaults backward
+  and is revised spuriously. That is the accepted price of the asymmetry, and it is
+  the less-harmful error — but it is real, and it is the sharpest argument in this
+  document for eventually not hand-parsing direction at all (Tier 2.4).
 
 The honest framing for `DESIGN.md`: we do not eliminate the lexical step, we
 *shrink its surface area to the smallest stable vocabulary* and make the decision

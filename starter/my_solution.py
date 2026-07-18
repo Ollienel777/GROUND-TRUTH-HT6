@@ -182,25 +182,44 @@ def find_states(view: GraphView, body: str):
 
 _ORIGIN_CUE = re.compile(r"(?:from|out of|derived from|starting from|originating from)\s+$", re.IGNORECASE)
 
+# Connectives that genuinely denote a transition, establishing "first -> last".
+# Deliberately NOT a bare "to": ambiguous linkers ("compared to", "relative to")
+# are not positive evidence of a described transition, and an unresolved direction
+# is safer than a wrongly-resolved one (see the asymmetry at the call site).
+_DIR_CONNECTIVE = re.compile(
+    r"(?:gave|gives|giving)\s+rise\s+to|\binto\b|\btowards?\b|\bbecame\b|\bbecomes\b|"
+    r"\bto\s+(?:a|an|the)\b",
+    re.IGNORECASE)
+
 
 def transition_direction(body_lower: str, states):
-    """Resolve the (origin -> destination) direction of a described transition and
-    return 'forward' | 'backward' | None by comparing potency. Direction is
-    load-bearing (backward = reprogramming/contradiction; forward = normal) and
-    must NOT depend on a single keyword like 'differentiate'. Vocabulary here is
-    small and stable (word order + a few origin prepositions), unlike the unbounded
-    space of transition verbs."""
+    """Resolve (origin -> destination) and return 'forward' | 'backward' | None.
+
+    Direction is decided by comparing potency, which grounds it in the graph's own
+    law rather than in prose: C1 says transitions do not increase potency, and
+    potency_level is inverted (lower = more potent), so a destination with a LOWER
+    potency_level is a potency *increase* — exactly what C1 forbids, i.e. the
+    newsworthy reading. The reverse (source -> terminal) is ordinary
+    differentiation, already held near-certain by C5, and is never news.
+
+    Direction is asserted only on POSITIVE evidence: an explicit origin cue
+    ("... produced from <state>") or a transition connective linking the pair.
+    Bare word order is never used — "PSC colonies emerged after Fibroblast cells
+    received defined factors" is reprogramming despite naming the destination
+    first. Unresolved returns None and the caller defaults to backward.
+    """
     named = sorted(((body_lower.find(s.name.lower()), s) for s in states
                     if body_lower.find(s.name.lower()) >= 0), key=lambda t: t[0])
     if len(named) < 2:
         return None
-    (_, first), (idx_last, last) = named[0], named[-1]
-    # subject-first by default; reversed when the last-mentioned state is the origin
-    # of a "... from <state>" / "produced from <state>" construction.
+    (idx_first, first), (idx_last, last) = named[0], named[-1]
+    between = body_lower[idx_first + len(first.name):idx_last]
     if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 24):idx_last]):
-        origin, dest = last, first
+        origin, dest = last, first            # "... produced from <state>"
+    elif _DIR_CONNECTIVE.search(between):
+        origin, dest = first, last            # "<state> gave rise to / into <state>"
     else:
-        origin, dest = first, last
+        return None                           # no positive evidence: do not guess
     if dest.potency_level < origin.potency_level:
         return "backward"
     if dest.potency_level > origin.potency_level:
@@ -457,21 +476,27 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
 
     # Stage 4 — in-model decision.
     # A contradiction of the "cannot go backward" law is recognised two ways: an
-    # explicit reversion keyword, OR structurally — a result that names a terminal
-    # state and reaches back toward the source (a potency-decreasing move) while not
-    # describing forward differentiation. The structural path catches strong
-    # reprogramming results phrased outside the keyword list.
+    # explicit reversion keyword, OR structurally — a potency-increasing move, which
+    # is what C1 declares impossible and therefore the newsworthy reading.
+    #
+    # The two directions are NOT symmetric, so neither are the defaults. A missed
+    # reprogramming result is a false negative on the largest scoring axis, while
+    # source -> terminal differentiation is already held near-certain by C5 and is
+    # never news. So FORWARD must be positively evidenced; anything unresolved falls
+    # back to backward. (Do not "improve" this by inferring direction from word
+    # order: that reads "PSC colonies emerged after Fibroblast cells were treated"
+    # as forward and silently drops a strong contradiction.)
     source_cue = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
     terminal_named = any(s.potency_level >= 3 for s in states)
     direction = transition_direction(b, states)   # 'forward' | 'backward' | None
     reversion_kw = any(k in b for k in _REVERSION_KW)
     if direction == "backward":
-        structural_back = True                     # potency-decreasing move, parsed from order
+        structural_back = True                     # parsed potency increase: contradicts C1
     elif direction == "forward":
-        structural_back = False                    # explicit forward move is never a contradiction
+        structural_back = False                    # positively evidenced forward move
     else:
-        # direction unresolved (one state named, or equal potency): fall back to the
-        # cue heuristic, but a bare 'differentiat' mention still marks it forward.
+        # direction unresolved: default to the newsworthy reading, except that a
+        # bare 'differentiat' mention is itself positive evidence of forward.
         worded_forward = "differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b
         structural_back = source_cue and terminal_named and not worded_forward
     reversion = reversion_kw or structural_back
