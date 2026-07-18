@@ -148,6 +148,14 @@ _INJECTION_NOSPACE = (
 _INJECTION_OVERRIDE_RE = re.compile(
     r"\boverride\s+(?:the\s+)?(?:prior|previous|provenance|confidence|claim|belief|"
     r"knowledge\s+base|instruction|rules?)\b", re.IGNORECASE)
+# De-spaced twin of the above, matched against a whitespace-stripped body so the
+# same control-vocabulary targeting also defeats no-space ("overridetheconfidence")
+# and letter-spacing ("o v e r r i d e ... confidence") evasion — both of which
+# collapse to a form the \s+ regex above cannot see. Still targeted (never bare
+# "override") to preserve the low-false-positive intent.
+_INJECTION_OVERRIDE_NOSPACE_RE = re.compile(
+    r"override(?:the)?(?:prior|previous|provenance|confidence|claim|belief|"
+    r"knowledgebase|instruction|rules?)")
 
 
 def _normalize_for_scan(body: str) -> str:
@@ -167,7 +175,8 @@ def looks_like_injection(body: str) -> bool:
     nospace = re.sub(r"\s+", "", norm)
 
     if (any(p in collapsed or p in letters for p in _INJECTION_PHRASES)
-            or _INJECTION_OVERRIDE_RE.search(collapsed)):
+            or _INJECTION_OVERRIDE_RE.search(collapsed)
+            or _INJECTION_OVERRIDE_NOSPACE_RE.search(nospace)):
         return True
     if any(p in nospace for p in _INJECTION_NOSPACE):
         return True
