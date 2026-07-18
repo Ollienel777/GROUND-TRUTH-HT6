@@ -1,104 +1,127 @@
 # IMPROVEMENTS — raising the ceiling past edge cases
 
-We have a robust, fully-passing baseline. The question now is what actually
-*separates a winning submission from a merely-correct one*. Honest take: **it is
-not more edge cases.** Every serious team passes the four capabilities and the
-practice set. Keyword-list hardening has sharp diminishing returns and is
-*fragile* — the hidden set will use wording we did not anticipate, and a longer
-keyword list is a losing arms race against text we cannot see.
+We have a robust, fully-passing baseline. The question is what separates a
+*winning* submission from a merely-correct one. It is **not more keyword edge
+cases** — that has sharp diminishing returns and is fragile against wording the
+hidden set will use that we cannot enumerate.
 
-The differentiators below are structural. They are ordered by expected ROI for
-this rubric (Firewall gate · Revision 40 · Skepticism 25 · OOD 35) and the
-sponsor's stated goal: "the right structure and the right instincts."
+**This is a retrospective finding, not a hypothesis.** Two structural fixes each
+closed a whole *class* of misses that no keyword list would have caught reliably:
+1. the terminal+source-cue **backward detector** (caught reprogramming phrased
+   with no reversion keyword);
+2. the **(from→to) direction extractor** (fixed forward-differentiation phrased
+   without the word "differentiate" being misread as a reprogramming
+   contradiction — a fabricated hit on the 40-pt axis, surfaced by the paraphrase
+   harness).
+The keyword broadenings done alongside these were worth far less.
 
 ---
 
-## Tier 1 — highest ROI
+## The architectural tension, resolved
 
-### 1. Make OOD precision *structural*, not lexical  (OOD, 35 pts)
-Today OOD leans on keyword lists for the "phenomenon." The precision trap (a
-near-miss that reads exotic but is in-model) is best beaten by reasoning over the
-**graph**, not the prose. Drive the decision from:
-- the **potency delta** between the source/target states (a move along the
-  modeled axis = in-model, regardless of how exotic the words are),
-- the **lineage_identity** relationship (same-lineage potency move = in-model;
-  equal-potency across identities = lateral = out-of-model),
-- the **`topological_assumption`** ("monotonic, adjacent-level") as the literal rule.
-Use text only to *extract which states/transition* are described; let structure
-decide in/out-of-model. This shrinks reliance on unpredictable wording and
-directly attacks the precision half of the 35-point axis.
+`ARCHITECTURE.md` correctly argues that for *this* closed, deterministic domain,
+architecture **A (pure symbolic)** is near-optimal and adding an LLM (toward **E**)
+increases risk for little gain. That must not be read as "migrate toward E."
+
+**Name it explicitly: the highest-ROI work (structural classification) is a
+*within-A* improvement.** It needs no Bayesian core and no LLM. It is orthogonal
+to the A-vs-E debate. Do not let E's gravity provoke a rewrite the rubric will not
+pay for.
+
+---
+
+## The residual ceiling is EXTRACTION, not classification
+
+Structure can only decide *once you know which states and what direction*. That
+step is still lexical — but the point of structural work is that it **moves the
+lexical dependency from the phenomenon (an unbounded vocabulary) to entity +
+direction (a small, stable one)**:
+- **Entities:** proven not to be name-coupled — the renamed-seed harness is 12/12
+  identical. (Residual gap: `find_states` is CamelCase-only, so lowercase
+  multi-word entity phrases still lean on `_SOURCE_KW`.)
+- **Direction:** now parsed from word order + a few origin prepositions
+  (`transition_direction`) and decided by potency comparison — no longer hinged on
+  the `"differentiat"` substring. Small stable vocabulary, but still lexical; this
+  is where residual brittleness lives and where new harness failures should be
+  hunted.
+
+The honest framing for `DESIGN.md`: we do not eliminate the lexical step, we
+*shrink its surface area to the smallest stable vocabulary* and make the decision
+structural from there.
+
+---
+
+## Tier 1 — highest ROI (all within-A)
+
+### 1.1 Structural classification (OOD precision + revision direction)
+Drive in/out-of-model and forward/backward from the **graph** — potency delta,
+lineage relationship, the `topological_assumption` — using text only to extract
+*which* states and *what direction*. Keep pushing brittleness out of the
+phenomenon vocabulary into entity+direction. **Status: backward detector and
+direction extractor done; continue as harnesses expose gaps.**
 **Risk:** low. **Effort:** medium. Keep keyword paths as fallback.
 
-### 2. Principled calibration in log-odds  (Revision, 40 pts — the biggest axis)
-Current update size is a heuristic `S → Δlogit`. Reframe as **evidence
-accumulation**: each provenance dimension contributes a log-likelihood-ratio
-weight, summed in log-odds, so the update is a Bayesian-style pool rather than a
-tuned scalar. Two things this buys:
-- **Prior-aware updates:** the same evidence should move a 0.55 claim more than a
-  0.97 claim (there is more to move). Log-odds gives this for free; make sure our
-  mapping actually reflects it.
-- **Defensible trajectory shape:** the graders score the *shape*; a principled
-  model produces the right shape without per-case tuning.
-**Risk:** medium (don't regress the trajectory probe). **Effort:** medium.
+### 1.2 Calibration — reframe, do NOT rewrite  (DEMOTED)
+The Bayesian rewrite buys **defensibility, not points, at real regression risk.**
+The update is already additive in log-odds — `logit(post) = logit(prior) + LLR` —
+so it is Bayesian *in form*, and prior-aware for free (verified: the same evidence
+moves a 0.55 claim ~0.48 in probability but a 0.97 claim only ~0.31, because
+log-odds space compresses near the ceiling). Reframing `2.8·S` as a sum of
+per-dimension log-likelihood-ratios is the same function with a nicer derivation.
+**Action:** describe `S` as an LLR pool in `DESIGN.md`; leave the engine alone.
+**Risk of rewriting:** medium (threatens the green trajectory probe). **Do not.**
 
-### 3. Sharpen `DESIGN.md`  (indirect, but judges read it)
-The rubric rewards "structure and instincts," and `DESIGN.md` is where we show
-them. Make it crisp: the extraction/decision firewall separation, the
-log-odds calibration model, the structural OOD discriminator, and *why* each
-resists a specific failure mode (anchor / flip-flop / trust-body / flag-all).
-**Risk:** none. **Effort:** low. **Do this regardless.**
+### 1.3 Sharpen `DESIGN.md`  (pure upside — do first)
+Judges read it and reward "structure and instincts." Make it crisp: the
+extraction/decision firewall separation, the log-odds (LLR-pool) calibration, the
+structural OOD + direction discriminator, and *why* each resists a named failure
+mode (anchor / flip-flop / trust-body / flag-all). **Point it at
+`ARCHITECTURE.md`'s scope-nuance section** — arguing "A is near-optimal here, and
+here is the exact condition under which that flips" reads as better judgment than
+reaching for the impressive option. That judgment is the recruiting signal.
+**Risk:** none. **Effort:** low.
 
 ---
 
 ## Tier 2 — real, but gated or higher-effort
 
-### 4. Extraction/decision split with an LLM front-end  (architecture signal)
-CORTEX's real system is "an LLM under constrained decoding for extraction, then
-symbolic/probabilistic code for the decision." Mirroring that — **LLM parses the
-body into a structured frame `{from, to, transition_type, phenomenon}`; our
-symbolic firewall + calibration make the decision** — is the single strongest
-"right structure" signal, and it removes the keyword brittleness entirely.
-Constraints to respect:
-- **Determinism** is required → temperature 0, and a **deterministic rule-based
-  fallback** (our current classifier) when no endpoint is available or a call
-  fails/times out. A crash scores the item as a no-op, so wrap defensively.
-- The LLM only *extracts*; it must **never** decide a mutation. The firewall stays
-  symbolic. (This is also the honest story for `DESIGN.md`.)
-**Risk:** medium–high (endpoint availability unknown; must not break determinism).
-**Effort:** high. **Do only if a model endpoint is provided.**
+### 2.1 Neural extraction with a deterministic fallback  (architecture signal)
+Mirrors CORTEX's real system (LLM extraction → symbolic decision) and removes the
+lexical dependency entirely. **Only if a model endpoint is actually provided**,
+and only behind: temperature 0, schema-constrained output, and the current
+rule-based classifier as fallback. The LLM only *extracts a typed frame*; it never
+decides a mutation. See `ARCHITECTURE.md` (option E) for the full contract.
+**Do not build speculatively.**
 
-### 5. Richer scoped revision & propagation  (Revision bonus)
-"Narrowing beats deleting" is explicitly rewarded. We set `refuted_under` and
-raise the complement claim. Extend: scope by *condition* more precisely, keep the
-umbrella/children consistent, and make the complement update magnitude principled
-(tie it to the same evidence weight, not a fixed factor).
-**Risk:** low. **Effort:** low–medium.
-
-### 6. Confidence & rationale quality  (instinct signal)
-`IngestResult.rationale`/`confidence` are logged and read. Make rationales state
-the *provenance-based* reason ("3 independent groups, direct method → large
-down; scoped to defined_factor"). Cheap credibility.
-**Risk:** none. **Effort:** low.
+### 2.2 Richer scoped revision & rationale quality
+"Narrowing beats deleting" is rewarded; make the complement-claim update magnitude
+principled (tie to the same evidence weight) and rationales state the
+provenance-based reason. Low risk, low effort, incremental.
 
 ---
 
-## Tier 3 — keep doing, but with discipline
-Edge-case probes (our 6 suites) are the **regression net**, not the source of new
-points. Keep adding cases that probe *structural* blind spots (new potency/lineage
-configurations, unseen provenance encodings of failure), not just new synonyms.
-When a probe fails, prefer a **structural** fix over a longer keyword list.
+## Tier 3 — testing discipline (this is the new source of signal)
+Hand-written synonym probes are saturated (8 suites, all green). The generalization
+harnesses replace guessing the hidden vocabulary with *measuring* coupling:
+- **`tests/paraphrase_probe.py`** — re-word each hard item; verdict must not
+  change. Includes the direction pair (forward vs backward, same entities). A
+  failure localizes extraction brittleness.
+- **`tests/renamed_seed_probe.py`** — rename entities to arbitrary tokens; verdict
+  and trajectory must not change. Catches name-coupling.
+Prefer a **structural** fix over a longer keyword list when a probe fails.
 
 ---
 
 ## What NOT to do
-- Do not keep growing keyword lists as the primary strategy — fragile, low ceiling.
-- Do not chase exact confidence numbers — the axis grades shape, not values.
+- Do not grow keyword lists as the primary strategy — fragile, low ceiling.
+- Do not do the Bayesian rewrite — reframe in prose instead.
+- Do not add an LLM path without a provided endpoint + deterministic fallback.
+- Do not chase exact confidence numbers — the axis grades shape.
 - Do not let any change touch the firewall guarantee (no body-derived mutation).
-- Do not add an LLM path without a deterministic fallback and defensive guards.
 
-## Suggested order for the remaining time
-1. Sharpen `DESIGN.md` (Tier 1.3) — fast, pure upside.
-2. Structural OOD precision (Tier 1.1) — attacks the 35-pt trap directly.
-3. Principled log-odds calibration (Tier 1.2) — the 40-pt axis.
-4. If an endpoint exists: LLM extraction with fallback (Tier 2.4).
-5. Scoped-revision + rationale polish (Tier 2.5/2.6) as time allows.
+## Sequencing for the remaining time
+1. **Sharpen `DESIGN.md`** (1.3) — pure upside; point it at the scope-nuance section.
+2. **Run the generalization harnesses** (Tier 3) — cheap; tells you where real
+   brittleness is instead of guessing.
+3. **Structural fixes targeted at whatever the harnesses expose** (1.1).
+4. Skip the Bayesian rewrite. Skip the LLM tier unless an endpoint materializes.

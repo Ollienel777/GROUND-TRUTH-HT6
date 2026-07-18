@@ -180,6 +180,34 @@ def find_states(view: GraphView, body: str):
     return out
 
 
+_ORIGIN_CUE = re.compile(r"(?:from|out of|derived from|starting from|originating from)\s+$", re.IGNORECASE)
+
+
+def transition_direction(body_lower: str, states):
+    """Resolve the (origin -> destination) direction of a described transition and
+    return 'forward' | 'backward' | None by comparing potency. Direction is
+    load-bearing (backward = reprogramming/contradiction; forward = normal) and
+    must NOT depend on a single keyword like 'differentiate'. Vocabulary here is
+    small and stable (word order + a few origin prepositions), unlike the unbounded
+    space of transition verbs."""
+    named = sorted(((body_lower.find(s.name.lower()), s) for s in states
+                    if body_lower.find(s.name.lower()) >= 0), key=lambda t: t[0])
+    if len(named) < 2:
+        return None
+    (_, first), (idx_last, last) = named[0], named[-1]
+    # subject-first by default; reversed when the last-mentioned state is the origin
+    # of a "... from <state>" / "produced from <state>" construction.
+    if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 24):idx_last]):
+        origin, dest = last, first
+    else:
+        origin, dest = first, last
+    if dest.potency_level < origin.potency_level:
+        return "backward"
+    if dest.potency_level > origin.potency_level:
+        return "forward"
+    return None
+
+
 _REVERSION_KW = (
     "revert", "reverted", "reversion", "returned", "return to", "return of",
     "back to", "de-differentiat", "dedifferentiat", "less-committed",
@@ -435,9 +463,18 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     # reprogramming results phrased outside the keyword list.
     source_cue = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
     terminal_named = any(s.potency_level >= 3 for s in states)
-    forward = "differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b
-    structural_back = source_cue and terminal_named and not forward
-    reversion = any(k in b for k in _REVERSION_KW) or structural_back
+    direction = transition_direction(b, states)   # 'forward' | 'backward' | None
+    reversion_kw = any(k in b for k in _REVERSION_KW)
+    if direction == "backward":
+        structural_back = True                     # potency-decreasing move, parsed from order
+    elif direction == "forward":
+        structural_back = False                    # explicit forward move is never a contradiction
+    else:
+        # direction unresolved (one state named, or equal potency): fall back to the
+        # cue heuristic, but a bare 'differentiat' mention still marks it forward.
+        worded_forward = "differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b
+        structural_back = source_cue and terminal_named and not worded_forward
+    reversion = reversion_kw or structural_back
     if reversion:
         reaches_source = source_cue
         if reaches_source:

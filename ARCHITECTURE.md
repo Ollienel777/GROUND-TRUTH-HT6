@@ -196,6 +196,26 @@ The neural extraction layer (Tier 2) is an optional upgrade, valuable only with 
 model endpoint and only behind a deterministic fallback. Reassuringly, the
 hackathon path and the "build it for real" path point in the same direction.
 
+**A caveat so the two do not get conflated:** the Tier-1 structural work is a
+*within-A improvement*, not a step toward E. It needs no Bayesian core and no LLM;
+it is orthogonal to the A-vs-E choice. E's gravity should not be allowed to
+provoke a rewrite this domain will not pay for.
+
+**Where the residual ceiling actually is — extraction, not classification.**
+Structural reasoning can only decide *once you know which states and what
+direction*. That step stays lexical. The value of the structural work is that it
+**moves the lexical dependency from the phenomenon (an unbounded vocabulary) to
+entity + direction (a small, stable one)** and makes the decision structural from
+there. Two empirical results bound this:
+- **Entities are not name-coupled** — the renamed-seed harness is identical under
+  arbitrary renaming.
+- **Direction is load-bearing** — the lateral-vs-reversion and forward-vs-backward
+  calls turn on it. It is now parsed from word order + a few origin prepositions
+  and decided by potency comparison, rather than a single keyword. This is the
+  smallest stable vocabulary we can reduce it to without a neural extractor; it is
+  also where the next brittleness will surface (hunt it with the paraphrase
+  harness), and it is the precise thing option E's extraction layer would remove.
+
 ---
 
 ## Technology notes (for the production build)

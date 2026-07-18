@@ -19,15 +19,22 @@ the full Stage 0–6 pipeline; `DESIGN.md` is written. All checks green:
 | `tests/trajectory_probe.py` | cumulative confidence shape (no creep / bounded / no rebound) | 3/3 |
 | `tests/ood_subtype_probe.py` | `propose_axis` vs `propose_regime` + correct name | 6/6 |
 | `tests/malformed_provenance_probe.py` | missing/garbage/non-dict inputs degrade gracefully | 11/11 |
+| `tests/paraphrase_probe.py` | re-worded items (incl. direction pair) preserve verdict | 12/12 |
+| `tests/renamed_seed_probe.py` | entities renamed to arbitrary tokens — verdicts unchanged | 12/12 |
 
-**Hardening done:** structural + keyword classification (generalizes off names/IDs);
-injection detector normalizes unicode/zero-width and defeats letter-spacing; failure
-resolution keys off structured provenance only (no body-triggered `drop_claim`);
-non-dict provenance / non-str body degrade to no-op without crashing.
+**Hardening done:** structural classification generalizes off names/IDs (renamed-seed
+12/12); reprogramming detected structurally without reversion keywords; **transition
+direction parsed as (from→to) potency, not the `differentiat` keyword** (fixes
+forward-differentiation being misread as a contradiction); injection detector
+normalizes unicode/zero-width and defeats letter-spacing; failure resolution keys off
+structured provenance only (no body-triggered `drop_claim`); non-dict provenance /
+non-str body degrade to no-op without crashing.
 
-**Known nature of the approach:** classification is keyword+structural, which is
-robust but inherently brittle to wording the hidden set may use. See `IMPROVEMENTS.md`
-for the plan to raise the ceiling beyond edge-case coverage.
+**Known nature of the approach & residual ceiling:** classification is structural, but
+extraction (which states + what direction) is still lexical — now reduced to the
+smallest stable vocabulary (entity tokens + a few directional prepositions). That is
+where residual brittleness lives. See `IMPROVEMENTS.md` (extraction ceiling) and
+`ARCHITECTURE.md` (why A is right here, and the exact condition under which E wins).
 
 ---
 
