@@ -31,13 +31,17 @@ SRC = os.path.join(ROOT, "starter", "my_solution.py")
 ALLOWED = {
     "extract", "find_states", "transition_direction",
     "_normalize_for_scan", "looks_like_injection",
+    # clause/polarity/modality perception helpers (all consumed only by extract)
+    "_split_clauses", "_neg_split", "_has_rev", "_scan_reversion",
 }
 
 # The vocabulary of raw-text reading. A leaked body-read references one of these
 # keyword/regex identifiers, or matches the bare 'differentiat' literal, as CODE.
 FORBIDDEN_NAMES = {
-    "_REVERSION_KW", "_SOURCE_KW", "_LATERAL_KW", "_AGE_KW", "_FUNC_KW", "_CONFIRM_KW",
+    "_SOURCE_KW", "_LATERAL_KW", "_AGE_KW", "_FUNC_KW", "_CONFIRM_KW",
     "_IDENTITY_PRESERVED_RE", "_DIR_CONNECTIVE", "_ACTIVE_PRODUCTION", "_ORIGIN_CUE",
+    "_REV_VERBS", "_REV_DESCRIPTORS", "_NEG_RE", "_NEG_TERM", "_HYP_RE",
+    "_COMPARATIVE_RE", "_CHANGE_VERB_RE",
 }
 FORBIDDEN_STR = "differentiat"
 
