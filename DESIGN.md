@@ -18,12 +18,18 @@ S = (0.65·groups + 0.35·replications) · directness · effect_strength    ∈ 
 
 Read this as **evidence accumulation in log-odds**, the graph's native space: each
 provenance dimension contributes weight to a pooled log-likelihood ratio, and the
-update is `logit(posterior) = logit(prior) + LLR` — Bayesian in form, not a fitted
-curve. Three properties fall out rather than being tuned in: **prior-aware** (the same
-evidence moves a contested 0.55 claim ≈0.48 in probability but a near-certain 0.97
-only ≈0.31 — log-odds compresses near the ceiling); **near-zero on noise** (sub-ε
-moves, `|Δlogit| < 0.15`, collapse to `no_op`); **never clamped** (2.8 sits under the
-API's 3.0 cap).
+update is `logit(posterior) = logit(prior) + LLR` — Bayesian in *form*. To be honest
+about what that does and doesn't buy: the per-dimension weights (the 0.65/0.35 split,
+the 2.8 scale) are still a tuning surface — we moved the heuristic into the
+likelihood-ratio table, we did not eliminate it. What is *not* tuned is the trajectory
+**shape** the rubric grades, which is a property of log-odds accumulation rather than of
+the constants. Three such properties fall out: **prior-aware** (the same evidence moves
+a contested 0.55 claim ≈0.48 in probability but a near-certain 0.97 only ≈0.31 —
+log-odds compresses near the ceiling); **near-zero on noise** (sub-ε moves,
+`|Δlogit| < 0.15`, collapse to `no_op`); **never clamped** (2.8 sits under the API's
+3.0 cap). This is why we keep the pool and do *not* rewrite it into a full Bayesian
+network: the shape is already right, and the constants are cheaper to defend than to
+re-derive.
 
 `groups`/`replications` normalize via a word→number ladder (`few=2, several=4,
 many=6`) and saturate; independent replication dominates as the least gameable
@@ -37,11 +43,21 @@ We also `set_scope {refuted_under}`, raise the contested complement, and on stro
 evidence promote the matching declared absence to an edge — one item, a multi-claim,
 provenance-shaped update.
 
-**Skepticism** keys off provenance thinness, never recognition. A single-source,
-unreplicated contradiction is *held* (`hold_pending`) regardless of the target's
-confidence, then resolved — dropped on a structured retraction, promoted to a real
-revision on corroboration. The fabricated false alarm gets no help from prior
-knowledge.
+**Skepticism is security work, not just calibration.** The structured provenance is
+*adversary-authored* — schema-valid, not honest. Computing magnitude from it
+deterministically does not make it trustworthy; it only confines the adversary to a
+narrow, typed, auditable interface instead of free text, and the skepticism prior is
+what defends *that* interface. It keys off **independence, never recognition**: a
+*single-source* contradiction — one not independently reproduced, no matter how high
+its internal `replication_count` — is *held* (`hold_pending`) regardless of the
+target's confidence, then resolved: dropped on a structured retraction, promoted to a
+real revision only on independent corroboration (the boundary is one independent group
+→ two). The announced fabricated false alarm therefore gets no help from prior
+knowledge — it is caught because its provenance is *thin*, not because the text is
+recognized. And the honest limit of the defense: the schema carries no source
+identity, so a *maxed* fabrication — many claimed independent groups — is undetectable
+by construction. That is precisely why the trap must be, and is, thin-provenance; we
+defend the attack the interface can express and say plainly where it cannot.
 
 ## Classification is structural, not lexical
 
