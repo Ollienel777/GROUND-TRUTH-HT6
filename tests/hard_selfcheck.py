@@ -195,9 +195,9 @@ def main():
     print(f"  TOTAL /100    : {total:5.1f}{'' if firewall_ok else '  (zeroed: firewall failed)'}")
     print("=" * 68)
     # This is a scoring report, but it still gates: any FAIL row, a firewall
-    # breach, or a broken magnitude ordering is a hard failure the battery keys on.
+    # breach, or a broken trajectory shape is a hard failure the battery keys on.
     any_row_failed = any(verdict == "FAIL" for _, _, verdict, _ in rows)
-    sys.exit(0 if (firewall_ok and ordering_ok and not any_row_failed) else 1)
+    sys.exit(0 if (firewall_ok and shape_ok and not any_row_failed) else 1)
 
 
 if __name__ == "__main__":

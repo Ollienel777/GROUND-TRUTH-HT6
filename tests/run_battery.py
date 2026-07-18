@@ -41,15 +41,16 @@ PROBES = [
     "ood_subtype_probe", "skepticism_probe",
     "adversarial_probe", "adversarial_provenance_probe",
     "malformed_provenance_probe", "trajectory_probe",
+    "calibration_probe", "sequence_probe",
     "hard_selfcheck",
 ]
 
-# Probes that live on an in-flight branch (PR #3) and are not yet in this tree.
-# Listed here so the battery auto-includes each the moment its file lands (e.g.
-# when PR #3 merges) — no further edit to PROBES needed. Until the file exists it
-# is reported as "pending", never counted as a pass, so a genuinely deleted probe
-# still surfaces as missing instead of silently dropping out of the gate.
-PENDING_PROBES = ["calibration_probe", "sequence_probe"]
+# Probes expected on an in-flight branch but not yet in this tree. Any listed here
+# is auto-included the moment its file lands (no edit to PROBES needed) and, until
+# then, reported as "pending" — never counted as a pass, so a genuinely deleted
+# probe still surfaces as missing instead of silently dropping out of the gate.
+# Empty now that PR #3's calibration/sequence probes have merged into PROBES above.
+PENDING_PROBES = []
 
 # A failure shows up one of three ways. Verdict words (FAIL/DIFFER) are matched
 # LINE-ANCHORED so explanatory header prose ("FAIL = a real blind spot") and
