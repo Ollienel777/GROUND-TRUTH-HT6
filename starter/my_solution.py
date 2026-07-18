@@ -308,7 +308,8 @@ _IDENTITY_PRESERVED_RE = re.compile(
 # — so the firewall is untouched; it only decides which booleans `extract` emits.
 _CLAUSE_BOUNDARY = re.compile(r"[.;:\n]")
 _NEG_RE = re.compile(
-    r"\b(?:not|no|never|without|none|neither|nor|cannot|can't|couldn't|wouldn't|"
+    # "no longer" is NOT negation — "irreversibility no longer holds" asserts reversion
+    r"\b(?:not|no(?!\s+longer)|never|without|none|neither|nor|cannot|can't|couldn't|wouldn't|"
     r"didn't|doesn't|don't|wasn't|weren't|isn't|aren't|hasn't|haven't|"
     r"did\s+not|does\s+not|do\s+not|was\s+not|were\s+not|is\s+not|are\s+not|"
     r"could\s+not|would\s+not|has\s+not|have\s+not|fail(?:s|ed)?\s+to|unable\s+to|"
@@ -324,12 +325,24 @@ _NEG_TERM = re.compile(
 # real result, so "whether" clauses are not reliably hypothetical (see adversarial INJ5).
 _HYP_RE = re.compile(
     r"\b(?:if|hypothetical(?:ly)?|in\s+principle|were\s+to|would\s+be|"
-    r"suppose|assuming|conceivably|in\s+theory|imagine|should\s+it)\b",
+    r"suppose|assuming|conceivably|in\s+theory|imagine|should\s+it)\b"
+    # subject-aux inversion is a conditional too: "Were Fibroblast cells to revert ...".
+    # Anchored to clause-start: a fronted auxiliary is clause-initial, so this does NOT
+    # match mid-clause passives like "cells were restored to ..." (a real result).
+    r"|^\s*were\s+\w+(?:\s+\w+){0,3}\s+to\b",
     re.IGNORECASE)
 # a comparative construction ("more X than", "X-er than", "as X as") is a static
 # comparison; only a change verb turns a relative-state descriptor into an event.
 _COMPARATIVE_RE = re.compile(
     r"\b(?:more|less)\s+\w+\s+than\b|\b\w+er\s+than\b|\bas\s+\w+\s+as\b", re.IGNORECASE)
+# Transition verbs used ONLY to detect a NEGATED structural reprogramming whose verb is
+# outside the reversion lexicon ("did not CONVERT to PSC"). Kept separate from the
+# reversion vocabulary so it never adds POSITIVE evidence — it only lets a negation scope
+# suppress a source-directed transition that names no reversion keyword.
+_TRANSITION_VERB_RE = re.compile(
+    r"\b(?:revert\w*|reprogram\w*|de-?differentiat\w*|convert\w*|return\w*|restor\w*|"
+    r"regain\w*|reacquir\w*|driven|drive|coax\w*|regress\w*|roll\w*\s+back)\b",
+    re.IGNORECASE)
 _CHANGE_VERB_RE = re.compile(
     r"\b(?:became|become|becomes|turn\w*|shift\w*|convert\w*|revert\w*|driven|drove|"
     r"reprogram\w*|differentiat\w*|acquir\w*|regain\w*|return\w*|transform\w*|"
@@ -564,6 +577,20 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     clauses = _split_clauses(body)
     entity_clauses = [find_states(view, c) for c in clauses]
     asserted, negated, hypothetical, comparative = _scan_reversion(clauses)
+    # Structural negation (asserted-wins): a clause whose negated span negates a
+    # source-directed transition, even when the verb is outside the reversion lexicon
+    # ("did not convert to PSC"). Only fires when NO clause cleanly asserts a reversion,
+    # so a real assertion elsewhere in the body ("... but cells reverted to PSC") wins.
+    if not asserted:
+        for c, grp in zip(clauses, entity_clauses):
+            low = c.lower()
+            if _HYP_RE.search(low):
+                continue
+            _, n_part = _neg_split(low)
+            if n_part and _TRANSITION_VERB_RE.search(n_part) and (
+                    any(s.potency_level <= 1 for s in grp) or any(k in n_part for k in _SOURCE_KW)):
+                negated = True
+                break
     return EvidenceFrame(
         entities=states,
         entity_clauses=entity_clauses,

@@ -87,17 +87,37 @@ CASES = [
      P(),
      lambda r, v: _revised(r) and not r.ood_flag, "revise down (reprogramming), NOT ood", False),
 
-    # ---- KNOWN RESIDUAL (tracked XFAIL, like direction_probe.py's N8). The negation
-    #      guard anchors on the reversion VOCABULARY; a structural-only negated
-    #      reprogramming — a generic change verb ("convert") the reversion lexicon does
-    #      not list, negated, with the source/terminal pair driving the default — is not
-    #      yet caught. Closing it means applying negation scope to the structural
-    #      potency-pair signal, which DESIGN.md warns not to ship without a voice-varying
-    #      probe. Left visible rather than silently wrong.
+    # ---- STRUCTURAL NEGATION: a negated reprogramming whose verb is OUTSIDE the
+    #      reversion lexicon ("did not convert"). Closed by the clause-scoped structural
+    #      negation pass (asserted-wins), which negates a source-directed transition verb
+    #      inside a negation scope without adding any positive reversion evidence.
     ("NEG3 structural-only negated reprogramming (verb outside reversion lexicon)",
      "Fibroblast cells did not convert to PluripotentStemCell under any condition tested.",
      P(),
-     lambda r, v: not _mutated(r), "no state change (negated); KNOWN residual", True),
+     lambda r, v: not _mutated(r), "no state change (negated, structural)", False),
+
+    # ---- GENERALIZATION: paraphrases the guards must also catch.
+    ("GEN1 negation paraphrase ('never restored')",
+     "Fibroblast cells were never restored to the PluripotentStemCell state despite defined factors.",
+     P(),
+     lambda r, v: not _mutated(r), "no state change (negated paraphrase)", False),
+
+    ("GEN2 inverted-conditional hypothetical ('Were X to revert ...')",
+     "Were Fibroblast cells to revert to PluripotentStemCell, the dogma would fall; this remains hypothetical.",
+     P(),
+     lambda r, v: not _mutated(r), "no state change (subject-aux inversion)", False),
+
+    # ---- FALSE-POSITIVE GUARDS: the suppressors must NOT over-fire on real events.
+    ("FP1 'no longer holds' is an assertion, not a negation",
+     "Fibroblast cells were driven to the PluripotentStemCell state; irreversibility no longer "
+     "holds, across many independent groups.",
+     P(),
+     lambda r, v: _revised(r) and not r.ood_flag, "revise down ('no longer' is not negation)", False),
+
+    ("FP2 'became more potent' is a change verb, not a static comparison",
+     "Fibroblast cells became more potent, acquiring a pluripotent-like state, across many independent groups.",
+     P(),
+     lambda r, v: _revised(r) and not r.ood_flag, "revise down (change verb, not 'is ... than')", False),
 ]
 
 
