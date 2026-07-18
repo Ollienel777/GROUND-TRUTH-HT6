@@ -10,3 +10,7 @@ jobs:
           python-version: "3.11"
       # the starter is a no-op, so it will report unmet practice checks but must run cleanly
       - run: python -c "import public_scorer, groundtruth.harness, groundtruth.api; print('framework imports ok')"
+      # full probe/guard battery: firewall attribution guard, seam guard, format
+      # portability, OOD/direction coverage, and the hard self-check must all pass so
+      # a future branch cannot silently break attribution or entity resolution.
+      - run: python tests/run_battery.py
