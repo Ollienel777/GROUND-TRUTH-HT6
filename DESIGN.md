@@ -117,23 +117,19 @@ lexical — shrunk to the smallest stable vocabulary, not eliminated, and now is
 behind the single `extract` seam. Polarity, modality, predication, and clause locality
 are handled explicitly (see above) and locked by `polarity_probe.py`, so the common
 null-result / hypothetical / comparative / distractor failures no longer flip a verdict.
-The residual brittleness that remains is the *unusual* construction: the polarity/modality
-cues are still matched lexically (clause-scoped negation masking, a windowed reversion
-vocabulary, plus a short list of whole-body markers), so a sufficiently oblique negation
-or conditional outside that vocabulary can still slip through. The deliberately
-less-harmful hole is kept visible as an `XFAIL` (`direction_probe.py` N8: a forward result
-that puts the source in an oblique phrase — "arose in cultures *seeded with* PSC" —
-defaults backward). This is the price of rules-mode perception, and the exact ceiling a
-neural extractor would lift.
+Entity mentions are graph-validated across case, spacing, hyphens and conservative
+plurals; direction includes active, passive, and source-material roles (the former N8
+"seeded with" case is now enforced). Residual brittleness remains in the *open class* of
+unusual constructions: polarity/modality cues and origin roles still use finite lexical
+patterns, so sufficiently oblique wording can escape them. This is the honest price of
+rules-mode perception; adversarial mirrors and safe ambiguity defaults bound rather than
+eliminate that ceiling.
 
-**On architecture:** this *is* the neurosymbolic design — perception → grounding →
-probabilistic update → symbolic control — with perception deliberately in rules-mode.
-For a closed, fully-modeled domain an LLM buys recall at the cost of determinism and
-an injection surface; and for *this* submission the choice is not even open — the
-organizers have confirmed there is no model endpoint and `ingest` is called
-in-process under a stdlib-only rule, so a neural extractor is out of scope entirely.
-Because extraction is nonetheless isolated behind one seam emitting a typed frame,
-that layer stays a documented production drop-in (same frame, rules as fallback) — the
-structure is E's; only the perception layer's implementation is (permanently, here)
-rules. `ARCHITECTURE.md` has the full comparison — including why the
-LLM-proposes-deltas shortcut fails on the two properties that define this problem.
+**On architecture:** this remains architecture **A**—deterministic rule perception
+plus a hand-calibrated log-odds policy—but uses **E-shaped separation**: perception →
+grounding → uncertainty update → symbolic control. The distinction is substantive: a
+real E migration also needs a neural perception option and a modeled probabilistic
+core, not just these interfaces. This implementation deliberately follows the user's
+purely deterministic, non-LLM constraint, so no neural path is included. The seam is retained for isolation and
+auditability, not as a claim that the submission is already E. `ARCHITECTURE.md` has
+the full comparison and remaining non-LLM migration work.

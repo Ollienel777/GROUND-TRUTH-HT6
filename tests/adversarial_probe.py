@@ -224,6 +224,7 @@ def main():
     print("-" * 72)
     print(f"  {total_pass}/{total} probes pass")
     print("=" * 72)
+    sys.exit(1 if total_pass != total else 0)
 
 
 if __name__ == "__main__":

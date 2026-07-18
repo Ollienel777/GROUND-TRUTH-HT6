@@ -41,7 +41,7 @@ of this file (how we do it and why).
 ## 3. Current status
 
 **Complete and passing.** `starter/my_solution.py` implements the full pipeline;
-`DESIGN.md` is written. Everything is committed; the tree is clean. All checks green:
+`DESIGN.md` is written. Check `git status` for current in-progress changes. The verified baseline is:
 
 - `selfcheck.py` (official practice sandbox) — PASS
 - `tests/hard_selfcheck.py` (12-item stream on the real seed, approximates the 4 axes) — **100/100**
@@ -161,7 +161,8 @@ points, but the thing that lets us change the solution without silently breaking
 | `malformed_provenance_probe.py` | missing/garbage/non-dict inputs degrade to no-op, never crash |
 | `paraphrase_probe.py` | re-worded items preserve their verdict (measures lexical coupling) |
 | `renamed_seed_probe.py` | rename every entity to arbitrary tokens → identical verdicts (no name-coupling) |
-| `direction_probe.py` | attacks **both** direction errors; `N8` is a known hole tracked as an `XFAIL` |
+| `direction_probe.py` | attacks entity order, grammatical role, and source-material direction cues (14/14 enforced) |
+| `deterministic_perception_probe.py` | format portability, event scope, pending specificity, and firewall precision |
 | `extract_probe.py` | pins `extract()`'s output — the perception seam / an LLM's target schema |
 | `seam_guard.py` | AST check: raw text is read only in `extract` + firewall, nowhere else |
 
@@ -197,19 +198,14 @@ Each maps to a specific failure it prevents:
 
 ## 8. Open questions & where you can help
 
-- **The endpoint question (dispositive).** `RULES.md` says *if* the organizers
-  provide a shared model endpoint, we may call it from `ingest`. We have not
-  confirmed whether one exists. That single fact decides whether the neural
-  extraction layer is worth building. **If you can find out, that's high-value.** If
-  yes: an LLM extractor is now a drop-in behind the rules fallback (the seam in §4
-  exists precisely for this) — it emits the same `EvidenceFrame`, touches nothing
-  downstream, and removes the keyword brittleness entirely. If no: no network is
-  assumed at evaluation, and the rules path is correct by necessity.
-- **The tracked direction hole (`direction_probe.py` N8).** A genuinely-forward
-  result that puts the source in an oblique non-`from` phrase ("arose in cultures
-  *seeded with* PSC") defaults backward and is revised spuriously. It's the
-  less-harmful error and is kept *visible* as an `XFAIL` rather than hidden. Fair game
-  to narrow further — but read the two cautionary tales in `IMPROVEMENTS.md` first.
+- **The model choice for this task is resolved.** The user requires a purely
+  deterministic, non-LLM implementation. `RULES.md` conditionally permits an
+  organizer-provided endpoint, but this solution does not assume or use one. Keep the
+  typed seam because it isolates perception, not because a neural path is planned.
+- **Direction residuals are now generic, not N8.** The former oblique-source case
+  ("arose in cultures *seeded with* PSC") is closed and enforced together with
+  passive/generated-by and backward-role mirrors. Continue to attack new grammatical
+  roles symmetrically rather than growing an unconstrained verb list.
 - **Better generalization probes.** The paraphrase and renamed-seed harnesses measure
   brittleness structurally rather than by guessing vocabulary. More in that spirit
   (new potency/lineage configs, unseen provenance encodings) is worth more than new

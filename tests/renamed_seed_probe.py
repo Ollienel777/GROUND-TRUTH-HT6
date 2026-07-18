@@ -77,6 +77,7 @@ def main():
     print("-" * 74)
     print(f"  {n}/{len(orig)} items identical under renaming")
     print("=" * 74)
+    sys.exit(1 if n != len(orig) else 0)
 
 
 if __name__ == "__main__":

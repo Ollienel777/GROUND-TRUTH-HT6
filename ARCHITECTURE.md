@@ -228,37 +228,26 @@ typed frame, and the firewall runs first on raw body *outside* the seam. (This
 ordering is code-verified, not just asserted: `looks_like_injection` executes before
 `extract` in `_ingest`, and `tests/seam_guard.py` fails if any body text is read
 outside the seam — the specific things an external reviewer flagged as
-"unverified.") That is the E layering already — perception → grounding →
-probabilistic update → symbolic control — with the perception layer in rules-mode. The two upgrades that sharpen the
-**E** core are exactly the Tier-1 items in `IMPROVEMENTS.md`:
+"unverified.") Those are **E-shaped boundaries**, but the implementation remains
+architecture **A**: perception is deterministic rules, and the additive log-odds move
+uses a hand-calibrated evidence-strength heuristic rather than a modeled likelihood
+network. Naming the boundaries accurately matters; modularity is not architecture E.
 
-1. **Structural OOD** (grounding/type-check layer) instead of lexical keywords.
-2. **Probabilistic log-odds calibration** instead of a tuned heuristic.
+The non-neural upgrades toward E are:
 
-The neural extraction layer (Tier 2) is a genuine drop-in rather than a rewrite:
-because extraction is one seam emitting a typed frame, an LLM could replace
-`extract` by emitting the same `EvidenceFrame`, with the rules path as fallback.
-**But for the submission this is settled, not pending an endpoint:** the organizers
-have confirmed there is *no* model endpoint — the harness imports and calls `ingest`
-in-process, and the rules permit only the standard library — so a neural extractor
-is **out of scope for the submission; production-only.** The drop-in is a documented
-affordance of the seam, not a planned change.
+1. **Finish symbolic grounding/type-checking:** represent asserted event roles and
+   schema/topology checks explicitly, reducing lexical OOD fallbacks.
+2. **Build a genuine probabilistic core:** empirically calibrated provenance
+   likelihood ratios, explicit claim dependencies, and model-evidence/OOD semantics.
+3. **Persist/version EvidenceFrames and decision traces** for deterministic replay,
+   then add source-identity/dependence metadata and a human-gated governance loop.
 
-Which means **the A-vs-E distinction has effectively collapsed for the submission.**
-What ships already *is* E's layering — perception (the `extract` seam) → grounding →
-probabilistic update (the log-odds pool) → symbolic control (the Delta API). The only
-thing that keeps the label "A" is that the perception layer runs in rules-mode — and
-with no endpoint, a closed fully-modeled domain, and no need, that is now permanent
-rather than provisional. The hackathon path and the "build it for real" path point
-the same way; we have simply reached the end of the hackathon one.
-
-**A caveat so the two are not conflated:** the Tier-1 *classification* work
-(direction, OOD) needs no Bayesian core and no LLM, so in that sense it is a
-*within-A improvement*. But the *seam refactor* is exactly what realized E's
-structural separation — so the code has E's shape with rules-mode perception, and
-"within-A" must not be read as "not E-structured." E's gravity should still not
-provoke a neural rewrite this domain will not pay for — and, with no endpoint, now
-cannot have.
+The extraction seam means a different perception implementation could be substituted
+without rewriting control, but the user's requested implementation has an explicit
+**no-LLM, deterministic** constraint. `RULES.md` itself conditionally permits an
+organizer-provided endpoint; we
+do not rely on one and do not add a neural path. The current submission should therefore
+be described as **A with E-shaped separation**, not as E or as a collapsed distinction.
 
 **Where the residual ceiling actually is — extraction, not classification.**
 Structural reasoning can only decide *once you know which states and what

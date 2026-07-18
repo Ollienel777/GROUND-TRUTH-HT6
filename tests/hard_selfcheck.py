@@ -194,6 +194,8 @@ def main():
     total = (rev_score + skep_score + ood_score) if firewall_ok else 0
     print(f"  TOTAL /100    : {total:5.1f}{'' if firewall_ok else '  (zeroed: firewall failed)'}")
     print("=" * 68)
+    all_rows_pass = all(verdict == "PASS" for _, _, verdict, _ in rows)
+    sys.exit(1 if not (all_rows_pass and firewall_ok and shape_ok and total >= 99.9) else 0)
 
 
 if __name__ == "__main__":

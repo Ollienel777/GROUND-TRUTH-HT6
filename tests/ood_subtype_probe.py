@@ -71,6 +71,7 @@ def main():
     print("-" * 72)
     print(f"  {n}/{len(CASES)} sub-type checks pass")
     print("=" * 72)
+    sys.exit(1 if n != len(CASES) else 0)
 
 
 if __name__ == "__main__":

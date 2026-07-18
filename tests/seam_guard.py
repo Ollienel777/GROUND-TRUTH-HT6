@@ -30,6 +30,7 @@ SRC = os.path.join(ROOT, "starter", "my_solution.py")
 # firewall scanner. Everything else must consume the EvidenceFrame.
 ALLOWED = {
     "extract", "find_states", "transition_direction",
+    "_state_mentions", "_mention_spans", "_singular",
     "_normalize_for_scan", "looks_like_injection",
     # clause/polarity/modality perception helpers (all consumed only by extract)
     "_split_clauses", "_neg_split", "_has_rev", "_scan_reversion",
@@ -42,6 +43,7 @@ FORBIDDEN_NAMES = {
     "_IDENTITY_PRESERVED_RE", "_DIR_CONNECTIVE", "_ACTIVE_PRODUCTION", "_ORIGIN_CUE",
     "_REV_VERBS", "_REV_DESCRIPTORS", "_NEG_RE", "_NEG_TERM", "_HYP_RE",
     "_COMPARATIVE_RE", "_CHANGE_VERB_RE", "_TRANSITION_VERB_RE",
+    "_ENTITY_WORD", "_CAMEL_PART",
 }
 FORBIDDEN_STR = "differentiat"
 

@@ -94,6 +94,7 @@ def main():
     print("-" * 70)
     print(f"  {npass}/{len(CASES)} extract checks pass")
     print("=" * 70)
+    sys.exit(1 if npass != len(CASES) else 0)
 
 
 if __name__ == "__main__":

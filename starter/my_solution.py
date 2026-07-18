@@ -119,8 +119,8 @@ def structured_failure(prov: dict) -> bool:
 _INJECTION_PHRASES = (
     "set the confidence", "set confidence", "set it to", "set to certain",
     "mark as certain", "ignore prior", "ignore previous", "ignore all",
-    "disregard prior", "disregard previous", "overwrite", "override the",
-    "override this", "delete claim", "drop claim", "remove the claim",
+    "disregard prior", "disregard previous", "overwrite",
+    "delete claim", "drop claim", "remove the claim",
     "processor note", "system note", "admin", "you must set", "must set",
     "force the", "update the confidence", "assistant", "instruction:",
     # natural-language directives that try to dictate belief state without evidence
@@ -141,8 +141,13 @@ _BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence"
 _INJECTION_NOSPACE = (
     "settheconfidence", "setconfidence", "deleteclaim", "dropclaim",
     "removetheclaim", "ignoreprior", "ignoreprevious", "markascertain",
-    "forcethe", "updatetheconfidence", "overridethe", "ignoreprovenance",
+    "forcethe", "updatetheconfidence", "ignoreprovenance",
 )
+# "Override" is also ordinary scientific language (override a barrier/pathway).
+# Treat it as a directive only when it targets graph/control vocabulary.
+_INJECTION_OVERRIDE_RE = re.compile(
+    r"\boverride\s+(?:the\s+)?(?:prior|previous|provenance|confidence|claim|belief|"
+    r"knowledge\s+base|instruction|rules?)\b", re.IGNORECASE)
 
 
 def _normalize_for_scan(body: str) -> str:
@@ -161,7 +166,8 @@ def looks_like_injection(body: str) -> bool:
     letters = re.sub(r"\b([a-z])(?:\s+([a-z])\b)+", lambda m: m.group(0).replace(" ", ""), norm)
     nospace = re.sub(r"\s+", "", norm)
 
-    if any(p in collapsed or p in letters for p in _INJECTION_PHRASES):
+    if (any(p in collapsed or p in letters for p in _INJECTION_PHRASES)
+            or _INJECTION_OVERRIDE_RE.search(collapsed)):
         return True
     if any(p in nospace for p in _INJECTION_NOSPACE):
         return True
@@ -177,20 +183,82 @@ def looks_like_injection(body: str) -> bool:
 # ---------------------------------------------------------------------------
 # Stage 2 — semantic parse (classification only)
 # ---------------------------------------------------------------------------
+_ENTITY_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+_CAMEL_PART = re.compile(r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+")
+
+
+def _singular(word: str) -> str:
+    """Conservative morphology for entity mentions only (never scientific facts)."""
+    low = word.casefold()
+    if len(word) > 4 and low.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and low.endswith("s") and not low.endswith(("ss", "us")):
+        return word[:-1]
+    return word
+
+
+def _state_mentions(view: GraphView, body: str):
+    """Recover graph state mentions without an enumeration API.
+
+    GraphView intentionally exposes only exact ``cell_state(name)`` lookup.  Probe
+    bounded word n-grams in their observed, spaced, hyphenated, underscored and
+    compact forms, plus conservative singular forms.  Every accepted mention is
+    therefore still validated by the graph; no biology alias table is embedded.
+    """
+    words = list(_ENTITY_WORD.finditer(body))
+    found = []
+    # Six words covers the modeled names while bounding lookup work on long bodies.
+    for start in range(len(words)):
+        for end in range(start + 1, min(len(words), start + 6) + 1):
+            raw_words = [m.group(0) for m in words[start:end]]
+            variants = [raw_words]
+            singular = [_singular(w) for w in raw_words]
+            if singular != raw_words:
+                variants.append(singular)
+            last_singular = raw_words[:-1] + [_singular(raw_words[-1])]
+            if last_singular not in variants:
+                variants.append(last_singular)
+            raw = body[words[start].start():words[end - 1].end()]
+            candidates = {raw}
+            for ws in variants:
+                candidates.update(("".join(ws), " ".join(ws), "-".join(ws), "_".join(ws)))
+            cs = next((state for candidate in sorted(candidates)
+                       if (state := view.cell_state(candidate)) is not None), None)
+            if cs is not None:
+                found.append((words[start].start(), words[end - 1].end(), cs))
+
+    # One node per frame, ordered by its earliest textual mention. Prefer the
+    # longest surface match when several n-grams resolve the same node.
+    best = {}
+    for start, end, cs in found:
+        prior = best.get(cs.id)
+        if prior is None or (start, -(end - start)) < (prior[0], -(prior[1] - prior[0])):
+            best[cs.id] = (start, end, cs)
+    return sorted(best.values(), key=lambda x: (x[0], x[1]))
+
+
 def find_states(view: GraphView, body: str):
-    """Resolve CamelCase-ish tokens in the body against real graph states."""
-    seen, out = set(), []
-    for tok in re.findall(r"\b([A-Z][A-Za-z0-9]{2,})\b", body):
-        if tok in seen:
+    """Resolve case/spacing/hyphen/plural variants against real graph states."""
+    return [cs for _, _, cs in _state_mentions(view, body)]
+
+
+def _mention_spans(body: str, states):
+    """Locate normalized mentions of already-grounded states for role parsing."""
+    spans = []
+    for state in states:
+        parts = _CAMEL_PART.findall(state.name) or _ENTITY_WORD.findall(state.name)
+        if not parts:
             continue
-        seen.add(tok)
-        cs = view.cell_state(tok)
-        if cs is not None:
-            out.append(cs)
-    return out
+        pattern = r"\b" + r"[\s_-]*".join(map(re.escape, parts)) + r"s?\b"
+        m = re.search(pattern, body, re.IGNORECASE)
+        if m:
+            spans.append((m.start(), m.end(), state))
+    return sorted(spans, key=lambda x: x[0])
 
 
-_ORIGIN_CUE = re.compile(r"(?:from|out of|derived from|starting from|originating from)\s+$", re.IGNORECASE)
+_ORIGIN_CUE = re.compile(
+    r"(?:from|out of|derived from|starting from|originating from|seeded with|"
+    r"(?:generated|produced|yielded|formed|created)\s+by)\s+$", re.IGNORECASE)
 
 # Connectives that genuinely denote a transition, establishing "first -> last".
 # Deliberately NOT a bare "to": ambiguous linkers ("compared to", "relative to")
@@ -229,13 +297,12 @@ def transition_direction(body_lower: str, states):
     cue is not positive evidence: unresolved returns None and the caller defaults
     to backward, so failing to resolve is always the cheap error.
     """
-    named = sorted(((body_lower.find(s.name.lower()), s) for s in states
-                    if body_lower.find(s.name.lower()) >= 0), key=lambda t: t[0])
+    named = _mention_spans(body_lower, states)
     if len(named) < 2:
         return None
-    (idx_first, first), (idx_last, last) = named[0], named[-1]
-    between = body_lower[idx_first + len(first.name):idx_last]
-    if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 24):idx_last]):
+    (idx_first, end_first, first), (idx_last, _, last) = named[0], named[-1]
+    between = body_lower[end_first:idx_last]
+    if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 64):idx_last]):
         origin, dest = last, first            # "... produced from <state>"
     elif _DIR_CONNECTIVE.search(between):
         origin, dest = first, last            # "<state> gave rise to / into <state>"
@@ -277,7 +344,7 @@ _LATERAL_KW = (
     "transdifferentiat", "converted directly", "convert directly",
 )
 _AGE_KW = (
-    "aging", "ageing", "aged", "younger", "older", "rejuvenat", "senescen",
+    "aging", "ageing", "younger", "older", "rejuvenat", "senescen",
     "lifespan", "biological age", "chronological age", "epigenetic age",
     "cellular age", "youthful",
 )
@@ -306,7 +373,16 @@ _IDENTITY_PRESERVED_RE = re.compile(
 # scopes (NegEx: trigger -> next terminator) and skip hypothetical clauses, then classify
 # the remaining reversion cues. This stays pure classification — no magnitude, no command
 # — so the firewall is untouched; it only decides which booleans `extract` emits.
-_CLAUSE_BOUNDARY = re.compile(r"[.;:\n]")
+# Hard punctuation always delimits an event. Commas do so only for explicit
+# discourse coordination/consequences, or when they terminate a leading comparator
+# phrase. Ordinary appositives stay intact ("Fibroblast, after treatment, became
+# Neuron") so their transition endpoints remain in one event.
+_CLAUSE_BOUNDARY = re.compile(
+    r"[.;:\n]"
+    r"|,(?=\s*(?:and|but|however|whereas|although|though|yet|while|nonetheless|except|"
+    r"a\s+(?:result|finding)|(?:this|that)\s+(?:result|finding)|which)\b)"
+    r"|(?:^|(?<=[.;:\n]))\s*(?:unlike|compared\s+(?:with|to)|relative\s+to|versus)\b[^,]{0,80},",
+    re.IGNORECASE)
 _NEG_RE = re.compile(
     # "no longer" is NOT negation — "irreversibility no longer holds" asserts reversion
     r"\b(?:not|no(?!\s+longer)|never|without|none|neither|nor|cannot|can't|couldn't|wouldn't|"
@@ -318,7 +394,11 @@ _NEG_RE = re.compile(
     re.IGNORECASE)
 # a negation's forward scope ends at a comma or a contrast conjunction (NegEx termination)
 _NEG_TERM = re.compile(
-    r",|\b(?:but|however|whereas|although|though|yet|while|nonetheless|except)\b",
+    r",|\b(?:but|however|whereas|although|though|yet|while|nonetheless|except)\b"
+    # Coordinated independent predicate with an explicit subject: "no X was seen
+    # and Fibroblast returned ...". Does not match "did not revert and return".
+    r"|\band\s+(?=(?:[a-z][\w-]*\s+){1,4}(?:return\w*|revert\w*|restor\w*|"
+    r"convert\w*|became|acquir\w*|regain\w*|transition\w*)\b)",
     re.IGNORECASE)
 # a clause under a conditional/hypothetical frame reports no result
 # NOTE: deliberately NOT "whether" — "we tested whether X ...; confirmed" reports a
@@ -628,11 +708,12 @@ def _pending_id(states):
 
 
 def _match_pending(view: GraphView, states):
-    """Find the held claim this item resolves. A retraction rarely repeats the
-    full subject, so we match by subject OVERLAP, not exact key: exact id first,
-    then any pending whose subject shares a named state, then — only when the item
-    names no state at all — the sole outstanding pending. Returns a pending id or
-    None. (Always keyed off named entities, never off free-text commands.)"""
+    """Resolve a held claim by the most specific uniquely matching subject.
+
+    Exact endpoint sets win.  For partial references, terminal/origin states carry
+    more identity than a shared source state (e.g. many pending claims may all end
+    at pluripotency).  Ties abstain rather than dropping an unrelated pending.
+    """
     pids = view.pending_ids()
     if not pids:
         return None
@@ -641,11 +722,22 @@ def _match_pending(view: GraphView, states):
         return exact
     names = {s.name for s in states}
     if names:
-        for p in pids:
-            subject = set(p.split("::", 1)[-1].split("+"))
-            if names & subject:
-                return p
-        return None  # a subject was named but nothing overlaps: do not guess
+        non_source = {s.name for s in states if s.potency_level > 1}
+        scored = []
+        for pid in pids:
+            subject = set(pid.split("::", 1)[-1].split("+"))
+            overlap = names & subject
+            if overlap:
+                scored.append(((len(overlap & non_source), len(overlap), -len(subject - names)), pid))
+        if not scored:
+            return None
+        scored.sort(reverse=True)
+        # A source-only overlap is ambiguous when several pendings share it.
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return None
+        if scored[0][0][0] == 0 and len(pids) > 1:
+            return None
+        return scored[0][1]
     return pids[0] if len(pids) == 1 else None
 
 
@@ -677,7 +769,17 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     states = frame.entities
     S = strength(prov)
 
-    # Stage 3 — out-of-distribution (before any revision; precision-first).
+    # Retraction / failure-to-replicate is a structured-channel veto and resolves
+    # prior pending evidence before semantic OOD routing. Incidental words in a
+    # retraction notice ("aged cells", etc.) must not strand the held claim.
+    if structured_failure(prov):
+        pid = _match_pending(view, states)
+        if pid is not None:
+            return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
+                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
+        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
+
+    # Stage 3 — out-of-distribution (before any live-evidence revision; precision-first).
     kind, name = decide_ood(frame, view)
     if kind == "axis":
         return IngestResult([Delta("propose_axis", item.id, {"axis": name})],
@@ -685,15 +787,6 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
     if kind == "regime":
         return IngestResult([Delta("propose_regime", item.id, {"regime": name})],
                             f"out-of-model regime: {name}", 0.7, True)
-
-    # Retraction / failure-to-replicate — resolve a prior pending cleanly.
-    # Keyed off STRUCTURED provenance only, never body phrasing.
-    if structured_failure(prov):
-        pid = _match_pending(view, states)
-        if pid is not None:
-            return IngestResult([Delta("drop_claim", item.id, {"claim_id": pid})],
-                                "prior pending retracted / failed to replicate (structured); dropped", 0.8, False)
-        return IngestResult([no_op(item.id)], "retracted/failed per structured provenance; nothing to update", 0.6, False)
 
     # Polarity / modality / predication guard (NegEx/ConText-style, computed in the
     # perception seam). A reversion cue that is NEGATED ("did not revert"), HYPOTHETICAL

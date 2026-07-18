@@ -21,7 +21,8 @@ the full Stage 0–6 pipeline; `DESIGN.md` is written. All checks green:
 | `tests/malformed_provenance_probe.py` | missing/garbage/non-dict inputs degrade gracefully | 11/11 |
 | `tests/paraphrase_probe.py` | re-worded items (incl. direction pair) preserve verdict | 12/12 |
 | `tests/renamed_seed_probe.py` | entities renamed to arbitrary tokens — verdicts unchanged | 12/12 |
-| `tests/direction_probe.py` | attacks both direction errors (entity-order **and** grammatical-role mirrors); N8 = tracked known hole | 13/13 (+1 XFAIL) |
+| `tests/direction_probe.py` | attacks entity order, grammatical role, and source-material direction cues | 14/14 |
+| `tests/deterministic_perception_probe.py` | entity formats, event scope, origin roles, pending specificity, firewall precision | 15/15 |
 | `tests/extract_probe.py` | pins `extract()` output (the perception seam / an LLM's target schema) | 9/9 |
 | `tests/seam_guard.py` | AST check: raw-text reads live only in `extract`/firewall, nowhere else | PASS |
 
@@ -47,18 +48,18 @@ touch nothing downstream. The boolean→`phenomenon`-enum consolidation is delib
 **Known nature of the approach & residual ceiling:** classification is structural, but
 extraction (which states + what direction) is still lexical — now reduced to the
 smallest stable vocabulary (entity tokens + a few directional prepositions). That is
-where residual brittleness lives, and one hole is knowingly accepted and tracked
-(`direction_probe.py` N8: a forward result putting the source in an oblique non-`from`
-phrase — "arose in cultures seeded with PSC" — defaults backward). See
+where residual brittleness lives. The former N8 hole (a forward result putting the
+source in an oblique "seeded with" phrase) is now closed and enforced, along with its
+passive/generated-by and backward-role mirrors; uncommon unmodeled constructions remain
+the honest rules-mode ceiling. See
 `IMPROVEMENTS.md` (extraction ceiling; and the direction-fix cautionary tale — a
 structural fix that shipped green *and* regressed, twice) and
-`ARCHITECTURE.md`. On A-vs-E: the labels have effectively collapsed for the
-submission — what ships already *is* E's layering (the `extract` seam → grounding →
-log-odds → Delta API); only the perception layer runs in rules-mode, and with the
-organizers' confirmed no-endpoint (in-process, stdlib-only) that is permanent, not
-provisional. So "within-A" means only that the classification work needs no neural or
-Bayesian core — not that the code lacks E's structure. There is no submission-time
-condition under which the neural layer is added; it is a documented production drop-in.
+`ARCHITECTURE.md`. On A-vs-E: what ships is still architecture **A** (rules
+perception plus a tuned log-odds policy), but it deliberately adopts **E-shaped
+boundaries** (`extract` seam → grounding → log-odds → Delta API). The user's requested
+implementation is deterministic and no-LLM, so no neural path is planned. A genuine move
+to E would additionally require a modeled probabilistic core, persisted/versioned
+frames, richer source provenance, and governance—not merely swapping the extractor.
 
 ---
 
