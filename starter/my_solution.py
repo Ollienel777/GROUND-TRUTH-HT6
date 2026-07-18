@@ -17,6 +17,7 @@ Pipeline: 0 firewall -> 1 strength -> 2 parse -> 3 OOD -> 4 decision -> 5 magnit
 """
 from __future__ import annotations
 import re
+import unicodedata
 
 from groundtruth.deltas import Delta, no_op
 from groundtruth.ingest import EvidenceItem, IngestResult
@@ -115,19 +116,50 @@ _INJECTION_PHRASES = (
     # natural-language directives that try to dictate belief state without evidence
     "fully established and certain", "as certain in all cases", "treat the claim",
     "treat this claim", "regard the claim", "going forward, treat", "in all cases",
-    "consider it settled", "consider the claim",
+    "consider it settled", "consider the claim", "from now on", "fully established",
+    "permanently set", "lock the confidence", "hard-code", "hardcode",
+    "record this belief", "make this authoritative", "update your belief",
+    "the knowledge base should", "knowledge base to", "regard this as certain",
+    "treat as established", "treat as certain", "set all", "override prior",
+    "ignore the provenance", "ignore provenance", "disregard the provenance",
 )
-_BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence", "must", "certain")
+_BRACKET_CMD = ("set", "delete", "ignore", "overwrite", "override", "confidence",
+                "must", "certain", "drop", "remove", "force", "establish")
+# de-spaced command cores, matched against a whitespace-stripped body to defeat
+# letter-spacing evasion ("s e t  t h e  confidence"). Kept distinctive to avoid
+# false positives.
+_INJECTION_NOSPACE = (
+    "settheconfidence", "setconfidence", "deleteclaim", "dropclaim",
+    "removetheclaim", "ignoreprior", "ignoreprevious", "markascertain",
+    "forcethe", "updatetheconfidence", "overridethe", "ignoreprovenance",
+)
+
+
+def _normalize_for_scan(body: str) -> str:
+    """Fold homoglyphs/fullwidth (NFKC), strip zero-width & format controls and
+    soft hyphens, and lowercase — so unicode tricks cannot hide a directive."""
+    s = unicodedata.normalize("NFKC", body)
+    s = "".join(ch for ch in s if not unicodedata.category(ch).startswith("C"))
+    s = s.replace("\xad", "")
+    return s.lower()
 
 
 def looks_like_injection(body: str) -> bool:
-    b = body.lower()
-    if any(p in b for p in _INJECTION_PHRASES):
+    norm = _normalize_for_scan(body)
+    collapsed = re.sub(r"\s+", " ", norm)                 # "set  the" -> "set the"
+    # collapse runs of single letters ("s e t" -> "set") without touching words
+    letters = re.sub(r"\b([a-z])(?:\s+([a-z])\b)+", lambda m: m.group(0).replace(" ", ""), norm)
+    nospace = re.sub(r"\s+", "", norm)
+
+    if any(p in collapsed or p in letters for p in _INJECTION_PHRASES):
+        return True
+    if any(p in nospace for p in _INJECTION_NOSPACE):
         return True
     # an embedded bracketed directive that talks to the processor
-    for seg in re.findall(r"\[([^\]]*)\]|\{([^}]*)\}", body):
-        s = ("".join(seg)).lower()
-        if sum(k in s for k in _BRACKET_CMD) >= 2:
+    for seg in re.findall(r"\[([^\]]*)\]|\{([^}]*)\}", norm):
+        s = "".join(seg)
+        s2 = s.replace(" ", "")
+        if sum((k in s or k in s2) for k in _BRACKET_CMD) >= 2:
             return True
     return False
 
