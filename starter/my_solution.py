@@ -499,20 +499,29 @@ def _split_clauses(body: str):
 # Contrast/comparison asides ("Fibroblast, unlike Neuron cells, reverted to PSC";
 # "Compared with Neuron cells, Fibroblast ...") name a state that is explicitly NOT a
 # participant in the event. For the lateral CO-OCCURRENCE test only, the aside is excised
-# so a contrasted distractor cannot be mis-paired with the real subject — while the main
-# clause (subject + predicate) is left intact, so a genuine lateral stated around an aside
-# still fires. Closed class, like the NegEx/ConText triggers; applied per clause so a
-# leading aside is caught. Deliberately NOT used by the reversion scan or the negation
-# fallback (both read the untouched clauses), so this cannot perturb reversion detection.
+# so a contrasted distractor cannot be mis-paired with the real subject. Only a
+# COMMA-DELIMITED aside — one actually set off by punctuation — is excised:
+#   leading        "Unlike X, <main>"          trigger at clause start THROUGH a comma
+#   parenthetical  "<subj>, unlike X, <pred>"   comma THROUGH the next comma
+#   trailing       "<main>, unlike X"           comma THROUGH clause end
+# The main clause (subject + predicate) is always left intact, so a genuine lateral stated
+# around an aside still fires. A comma-LESS "aside" is treated as part of the main clause
+# (the defensible default): this can never over-excise the subject/target, so the fix adds
+# ZERO false-negatives; the rarer comma-less false-positive stays a documented residual, no
+# worse than before the fix. Closed class, like the NegEx/ConText triggers; deliberately NOT
+# used by the reversion scan or negation fallback (both read the untouched clauses), so it
+# cannot perturb reversion detection.
+_CONTRAST_TRIGGER = (
+    r"unlike|compared\s+with|compared\s+to|in\s+contrast\s+(?:to|with)"
+    r"|as\s+opposed\s+to|rather\s+than|relative\s+to|by\s+contrast|as\s+distinct\s+from")
 _CONTRAST_ASIDE = re.compile(
-    r"(?:^|,)\s*(?:unlike|compared\s+with|compared\s+to|in\s+contrast\s+(?:to|with)"
-    r"|as\s+opposed\s+to|rather\s+than|relative\s+to|by\s+contrast|as\s+distinct\s+from)"
-    r"\b[^,]*",
+    r"^\s*(?:" + _CONTRAST_TRIGGER + r")\b[^,]*,"     # leading aside: needs a terminating comma
+    r"|,\s*(?:" + _CONTRAST_TRIGGER + r")\b[^,]*",    # comma-introduced aside: to next comma / clause end
     re.IGNORECASE)
 
 
 def _strip_contrast(clause: str) -> str:
-    """Excise a contrast/comparison aside from one clause (lateral grouping only)."""
+    """Excise a comma-delimited contrast/comparison aside from one clause (lateral only)."""
     return _CONTRAST_ASIDE.sub(" ", clause)
 
 

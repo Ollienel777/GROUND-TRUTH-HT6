@@ -205,6 +205,22 @@ LATERAL_ASIDE_GATE = [
      "A single factor turned Fibroblast, unlike its usual fate, into Neuron. Reproducible."),
     ("parenthetical distractor state ('unlike IntestinalEpithelialCell')",
      "A single factor converted Fibroblast, unlike IntestinalEpithelialCell cells, into Neuron. Reproducible."),
+    # Comma-LESS leading aside: NOT excised (no delimiting comma), so the main clause with
+    # both real states is kept -> genuine lateral still fires. This is the case a naive
+    # "strip everything after the trigger" would over-excise into a false-negative.
+    ("comma-LESS leading aside kept in main clause -> lateral still fires",
+     "Unlike IntestinalEpithelialCell cells a factor converted Fibroblast into Neuron. Reproducible."),
+]
+
+# Comma-LESS leading contrast on an IN-MODEL item: also not excised, so the contrasted
+# distractor terminal stays and the co-occurrence test false-flags it. This is the
+# accepted residual of the comma-delimited restriction — no worse than before the fix and
+# the defensible default (a comma-less "aside" is really part of the main clause). Tracked
+# as XFAIL, NOT gated, so a future edit to the comma rule re-surfaces it here rather than
+# silently regressing.
+COMMA_LESS_XFAIL = [
+    ("comma-less leading contrast, in-model Fib->PSC (documented FP residual)",
+     "Unlike Neuron cells Fibroblast reverted to the PluripotentStemCell state. Reproducible."),
 ]
 
 def _row2_precision():
@@ -236,6 +252,13 @@ def _row2_precision():
         print(f"    {'ok  ' if ok else 'FAIL'}  {label:52} -> {(op and f'{op}({name})') or 'in-model'}")
     m = len(LATERAL_ASIDE_GATE)
     print(f"    -> {m - b_fail}/{m} genuine laterals preserved")
+
+    print("  (c) comma-less residual (XFAIL — accepted, not gated):")
+    for label, body in COMMA_LESS_XFAIL:
+        ood, op, name = _verdict(body)
+        # expected: still false-flagged (comma-less asides are not excised by design).
+        tag = "XFAIL" if ood else "XPASS(closed?)"
+        print(f"    {tag:14} {label:50} -> {(op and f'{op}({name})') or 'in-model'}")
     return gated_fail
 
 
