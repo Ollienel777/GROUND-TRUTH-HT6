@@ -466,12 +466,16 @@ _HYP_RE = re.compile(
 _COMPARATIVE_RE = re.compile(
     r"\b(?:more|less)\s+\w+\s+than\b|\b\w+er\s+than\b|\bas\s+\w+\s+as\b", re.IGNORECASE)
 # Transition verbs used ONLY to detect a NEGATED structural reprogramming whose verb is
-# outside the reversion lexicon ("did not CONVERT to PSC"). Kept separate from the
-# reversion vocabulary so it never adds POSITIVE evidence — it only lets a negation scope
-# suppress a source-directed transition that names no reversion keyword.
+# outside the reversion lexicon ("did not CONVERT to PSC", "did not REACH a pluripotent
+# state"). Kept separate from the reversion vocabulary so it never adds POSITIVE evidence
+# — it only lets a negation scope suppress a source-directed transition that names no
+# reversion keyword. "reach/attain/achieve" are arrive-at-a-state verbs: like "convert",
+# they carry no reversion keyword, so a *negated* one ("did not reach PSC") would otherwise
+# fall through to the potency default and be misread as an asserted reversion.
 _TRANSITION_VERB_RE = re.compile(
     r"\b(?:revert\w*|reprogram\w*|de-?differentiat\w*|convert\w*|return\w*|restor\w*|"
-    r"regain\w*|reacquir\w*|driven|drive|coax\w*|regress\w*|roll\w*\s+back)\b",
+    r"regain\w*|reacquir\w*|reach\w*|attain\w*|achiev\w*|driven|drive|coax\w*|regress\w*|"
+    r"roll\w*\s+back)\b",
     re.IGNORECASE)
 _CHANGE_VERB_RE = re.compile(
     r"\b(?:became|become|becomes|turn\w*|shift\w*|convert\w*|revert\w*|driven|drove|"

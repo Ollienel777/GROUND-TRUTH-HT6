@@ -71,18 +71,22 @@ GATE_FLIP = [
     ("negation paraphrase 'never restored'", "Across many independent groups, Fibroblast cells were never restored to the PluripotentStemCell state."),
     ("hypothetical 'if ... could'", "If defined factors could revert Fibroblast cells to the PluripotentStemCell state, dogma would fall; no such result here."),
     ("static comparison 'more potent than'", "Across many independent groups, the PluripotentStemCell state is more potent than Fibroblast."),
+    # Gap A, now FIXED (reach/attain/achieve added to the structural-negation verb list):
+    # a negated arrive-at-a-state verb no longer falls through to the potency default.
+    ("negation-verb 'did not reach' (was XFAIL; fixed)", "Across many independent groups, Fibroblast cells remained committed and did not reach the PluripotentStemCell state."),
+    ("negation-verb 'failed to achieve'", "Across many independent groups, Fibroblast cells failed to achieve the PluripotentStemCell state."),
 ]
 
-# MUST-FLIP, GAPS (tracked XFAIL — currently STILL revise, want no revision):
-#   (1) negation-verb coverage: "did not reach" — same class as NEG3 ("did not convert")
-#       but "reach" is outside the structural-negation transition-verb list, so the
-#       potency default reads it as a reversion. Likely a real false-positive.
-#   (2) epistemic modality / hedge: "may / appears to / suggests ... might" are not in
-#       _HYP_RE (which only catches conditionals). ARCHITECTURAL judgment call: is this
-#       magnitude (correctly provenance-driven, ignore body) or assertion-status
-#       (legitimately classified, like 'if')? Flagged, not patched, pending decision.
+# MUST-FLIP, Gap B (tracked XFAIL — currently STILL revise, ACCEPTED as a documented
+# residual, deliberately not patched). Epistemic modality / hedge ("may / appears to /
+# suggests ... might") is not in _HYP_RE (which catches only conditionals). This was an
+# architectural judgment call, decided to LEAVE: our design takes magnitude from
+# provenance, not body words, so a strong-provenance result with a cautious "may" is
+# plausibly a real result the authors hedged; and a suppressor here fires on POSITIVE
+# spans (no negation), so it would risk false-negatives on genuine reversions ("cells may
+# then be expanded", "a band appears") on the 40-pt axis. Recorded in the residual map,
+# not fixed. (Contrast Gap A, which fired only inside a negation scope -> zero FN risk.)
 XFAIL_FLIP = [
-    ("negation-verb gap: 'did not reach' (cf. NEG3 'did not convert')", "Across many independent groups, Fibroblast cells remained committed and did not reach the PluripotentStemCell state."),
     ("epistemic modal 'may revert'", "Across many independent groups, defined factors may revert Fibroblast cells to the PluripotentStemCell state."),
     ("epistemic modal 'appear to revert'", "Across many independent groups, defined factors appear to revert Fibroblast cells to the PluripotentStemCell state."),
     ("hedge 'results suggest ... might revert'", "These results suggest Fibroblast cells might revert to the PluripotentStemCell state, across many independent groups."),
@@ -120,7 +124,7 @@ def main():
     if gated_fail:
         print(f"  GATE FAILED: {len(gated_fail)} gated case(s) regressed: {gated_fail}")
     else:
-        print("  GATE OK: recall holds, confirmed must-flip guards hold; 2 gap families tracked XFAIL.")
+        print("  GATE OK: recall holds; must-flip guards hold (incl. Gap A fix); Gap B (epistemic modality) XFAIL.")
     print("=" * 78)
     sys.exit(1 if gated_fail else 0)
 
