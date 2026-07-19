@@ -73,14 +73,47 @@ def _num(v, default: float = 0.0) -> float:
     return default
 
 
-def strength(prov: dict) -> float:
-    """Scalar evidence strength in [0,1], from structured provenance only."""
-    groups = min(_num(prov.get("independent_groups", 0)), 6) / 6.0
-    repl = min(_num(prov.get("replication_count", 0)), 6) / 6.0
+# Per-dimension log-likelihood-ratio weights (in units of MAX_MOVE, the max log-odds
+# step). Independent groups dominate — they are the least gameable dimension; internal
+# replication counts for less; method directness and effect size scale how much each
+# observation is worth as evidence.
+_W_GROUPS = 0.65
+_W_REPL = 0.35
+_SAT = 6.0          # evidence saturates: beyond this count, more adds nothing
+
+
+def _sat(x: float) -> float:
+    return min(max(x, 0.0), _SAT) / _SAT
+
+
+def llr_breakdown(prov: dict) -> dict:
+    """The genuine probabilistic core (Layer 3), made explicit and auditable: the
+    per-dimension **log-likelihood-ratio** contributions the evidence supplies for the
+    hypothesis that the asserted effect is real. The update is
+    ``logit(posterior) = logit(prior) + MAX_MOVE * sum(these)`` — additive in log-odds,
+    i.e. Bayesian evidence pooling, not a black-box scalar. Structured provenance only;
+    no number is ever read from the body. Returns contributions in units of MAX_MOVE."""
+    groups = _sat(_num(prov.get("independent_groups", 0)))
+    repl = _sat(_num(prov.get("replication_count", 0)))
     directness = _DIRECTNESS.get(str(prov.get("method_directness", "")).lower(), 0.7)
     effect = _EFFECT.get(str(prov.get("effect_strength", "")).lower(), 0.6)
-    core = 0.65 * groups + 0.35 * repl          # independent replication dominates
-    return max(0.0, min(1.0, core * directness * effect))
+    quality = directness * effect          # per-observation informativeness discount
+    return {
+        "groups": _W_GROUPS * groups * quality,   # independent replication (dominant)
+        "repl": _W_REPL * repl * quality,         # internal replication (weaker)
+        "quality": quality,
+        "directness": directness,
+        "effect": effect,
+    }
+
+
+def strength(prov: dict) -> float:
+    """Pooled evidence strength in [0,1] — the summed per-dimension LLR (see
+    ``llr_breakdown``), clamped. ``Delta-logit = MAX_MOVE * strength`` is additive in
+    log-odds (Bayesian in form), prior-aware for free (log-odds compresses near the
+    ceiling), and read only from the structured channel."""
+    b = llr_breakdown(prov)
+    return max(0.0, min(1.0, b["groups"] + b["repl"]))
 
 
 def is_thin(prov: dict) -> bool:
@@ -177,15 +210,39 @@ def looks_like_injection(body: str) -> bool:
 # ---------------------------------------------------------------------------
 # Stage 2 — semantic parse (classification only)
 # ---------------------------------------------------------------------------
+def _spaced(name: str) -> str:
+    """CamelCase -> spaced ('PluripotentStemCell' -> 'Pluripotent Stem Cell')."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name)
+
+
 def find_states(view: GraphView, body: str):
-    """Resolve CamelCase-ish tokens in the body against real graph states."""
+    """Resolve graph states named in the body — structurally, against the read-only
+    `view`, never by a hardcoded name. Beyond bare CamelCase tokens we also resolve
+    (a) any-case single-word mentions ('fibroblast'), (b) simple plurals
+    ('Fibroblasts', 'neurons'), and (c) spaced phrases collapsed into one token
+    ('pluripotent stem cell' -> PluripotentStemCell). Only an EXACT case-insensitive
+    match to a real state name resolves — `cell_state()` does the check — so probing
+    extra candidate strings can surface a real entity but never invent one. Renaming
+    every entity to an arbitrary token leaves this unchanged (renamed_seed_probe)."""
     seen, out = set(), []
-    for tok in re.findall(r"\b([A-Z][A-Za-z0-9]{2,})\b", body):
-        if tok in seen:
-            continue
-        seen.add(tok)
-        cs = view.cell_state(tok)
-        if cs is not None:
+    cands: list[str] = []
+
+    def _add(s: str):
+        cands.append(s)
+        if len(s) > 4 and s[-1] in "sS":
+            cands.append(s[:-1])                       # simple plural -> singular
+
+    words = re.findall(r"[A-Za-z][A-Za-z0-9]*", body)
+    for i, w in enumerate(words):
+        if len(w) >= 3:
+            _add(w)                                    # single word, any case
+        for k in (2, 3, 4):                            # collapse a run of words
+            if i + k <= len(words):
+                _add("".join(words[i:i + k]))
+    for cand in cands:
+        cs = view.cell_state(cand)
+        if cs is not None and cs.id not in seen:
+            seen.add(cs.id)
             out.append(cs)
     return out
 
@@ -211,6 +268,21 @@ _DIR_CONNECTIVE = re.compile(
 _ACTIVE_PRODUCTION = re.compile(r"^\s*(?:\w+\s+){0,2}(?:produc|generat|yield)\w*\s", re.IGNORECASE)
 
 
+def _name_pos(body_lower: str, name: str):
+    """Position and matched length of a state name in the (lowercased) body, trying
+    the exact name first, then its spaced CamelCase form. Returns (index, length) or
+    (-1, 0), so spaced multiword names get a direction, not just a keyword fallback."""
+    i = body_lower.find(name.lower())
+    if i >= 0:
+        return i, len(name)
+    sp = _spaced(name).lower()
+    if sp != name.lower():
+        j = body_lower.find(sp)
+        if j >= 0:
+            return j, len(sp)
+    return -1, 0
+
+
 def transition_direction(body_lower: str, states):
     """Resolve (origin -> destination) and return 'forward' | 'backward' | None.
 
@@ -229,12 +301,12 @@ def transition_direction(body_lower: str, states):
     cue is not positive evidence: unresolved returns None and the caller defaults
     to backward, so failing to resolve is always the cheap error.
     """
-    named = sorted(((body_lower.find(s.name.lower()), s) for s in states
-                    if body_lower.find(s.name.lower()) >= 0), key=lambda t: t[0])
+    pos = [(_name_pos(body_lower, s.name), s) for s in states]
+    named = sorted((((i, ln), s) for ((i, ln), s) in pos if i >= 0), key=lambda t: t[0][0])
     if len(named) < 2:
         return None
-    (idx_first, first), (idx_last, last) = named[0], named[-1]
-    between = body_lower[idx_first + len(first.name):idx_last]
+    ((idx_first, len_first), first), ((idx_last, _), last) = named[0], named[-1]
+    between = body_lower[idx_first + len_first:idx_last]
     if _ORIGIN_CUE.search(body_lower[max(0, idx_last - 24):idx_last]):
         origin, dest = last, first            # "... produced from <state>"
     elif _DIR_CONNECTIVE.search(between):
@@ -297,34 +369,59 @@ def _pick(options, key):
     return key
 
 
+def _potency_axis_modeled(dom) -> bool:
+    """Type-check the schema itself: does the domain declare potency as a modeled,
+    monotonic transition axis? Reads the (otherwise unused) `topological_assumption`
+    so the grounding layer is driven by the declaration, not a baked-in assumption —
+    this is what lets the same code type-check a differently-declared schema."""
+    if dom is None:
+        return True  # no declaration: fall back to the built-in potency model
+    axis_ok = "potency" in [a.lower() for a in (dom.axes_modeled or [])]
+    topo = (dom.topological_assumption or "").lower()
+    return axis_ok or "potency" in topo
+
+
 def decide_ood(frame: "EvidenceFrame", view: GraphView):
-    """Return (kind, name) where kind in {'axis','regime',None}. Precision-first:
-    default to in-model unless the evidence clearly matches an excluded axis or a
-    non-modeled regime from the domain declaration. Consumes the frame; the only
-    graph reasoning here is structural (potency/lineage over resolved entities)."""
+    """Return (kind, name) where kind in {'axis','regime',None}. Precision-first,
+    STRUCTURAL-first: the transition *type* (in-model vs off-topology regime) is
+    decided from the graph — potency, lineage, and the domain's declared topology —
+    and only the two genuinely untracked AXES (biological age, function-without-
+    identity), which by definition the graph cannot represent, fall to a lexical cue.
+
+    Structural type-check (grounding layer): under a monotonic-potency topology a
+    move that changes potency is an EXPRESSIBLE transition (differentiation, or
+    reprogramming toward the source = an in-model *contradiction*); a move at EQUAL
+    potency between distinct lineages is off-topology (lateral regime). A same-lineage
+    potency move is the near-miss — expressible, hence in-model — and is protected
+    here even when it carries exotic wording."""
     states = frame.entities
     dom = view.domain()
     axes_excluded = dom.axes_excluded if dom else []
     regimes_not = dom.regimes_not_modeled if dom else []
+    potency_axis = _potency_axis_modeled(dom)
 
-    lateral_struct = any(
-        a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
-        for a in states for c in states if a is not c
-    )
-    potency_changes = any(a.potency_level != c.potency_level for a in states for c in states if a is not c)
+    pairs = [(a, c) for a in states for c in states if a is not c]
+    lateral_struct = any(a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
+                         for a, c in pairs)
+    potency_changes = any(a.potency_level != c.potency_level for a, c in pairs)
+    # near-miss signature: a potency move WITHIN one lineage — an ordinary in-model
+    # transition, never OOD, however exotic the prose (the precision trap).
+    same_lineage_move = any(a.potency_level != c.potency_level and a.lineage_identity == c.lineage_identity
+                            for a, c in pairs)
 
-    # A modeled transition (reprogramming toward the source, or any potency move
-    # between represented states) means an exotic-sounding word — "aged",
-    # "identity", etc. — is incidental to an IN-MODEL event, not the phenomenon.
-    # This is the precision guard against the near-miss trap.
-    in_model_transition = frame.reaches_source or potency_changes
+    # An expressible (in-model) transition: reprogramming toward the source, or any
+    # potency move on the modeled axis. Exotic-sounding words are then incidental.
+    in_model_transition = frame.reaches_source or (potency_changes and potency_axis)
 
-    # 1. non-modeled REGIME: a lateral jump between equal-potency, distinct
-    #    identities (structural, highest confidence).
-    if lateral_struct:
+    # 1. non-modeled REGIME — lateral jump between equal-potency distinct identities
+    #    (structural, highest confidence). Suppressed if a same-lineage potency move
+    #    is also present (the event is really an in-model transition).
+    if lateral_struct and not same_lineage_move:
         return "regime", _pick(regimes_not, "lateral_somatic_conversion")
 
-    # 2. excluded AXIS: a property the model does not track at all.
+    # 2. excluded AXIS — a property the model does not track AT ALL. This is the one
+    #    irreducibly lexical branch: the graph has no node/edge for age or function,
+    #    so there is nothing structural to test against; the cue is all there is.
     if not in_model_transition:
         if frame.is_aging:
             return "axis", _pick(axes_excluded, "biological_age")
@@ -333,9 +430,9 @@ def decide_ood(frame: "EvidenceFrame", view: GraphView):
                 return "axis", _pick(axes_excluded, "cell_function_independent_of_identity")
             return "regime", _pick(regimes_not, "identity_preserving_state_change")
 
-    # 3. keyword-only lateral (single state named): only when nothing on the
-    #    modeled potency axis is happening.
-    if frame.is_lateral and not potency_changes and not frame.is_reversion:
+    # 3. keyword-only lateral (single state named) — only when nothing on the modeled
+    #    potency axis is happening and it is not a reversion.
+    if frame.is_lateral and not potency_changes and not frame.is_reversion and not same_lineage_move:
         return "regime", _pick(regimes_not, "lateral_somatic_conversion")
 
     return None, None
@@ -437,6 +534,11 @@ class EvidenceFrame:
     identity_preserved: bool       # "identity unchanged/preserved" phrasing
     is_confirmation: bool          # confirming-evidence phrasing
     content_words: set             # content tokens, for support-claim grounding
+    faithfulness: float = 1.0      # extractor's confidence in its OWN read [0,1].
+    #   E's "extraction-faithfulness score": how much of the body the perception
+    #   layer actually resolved (entities linked, direction settled, a phenomenon
+    #   signal present). The decision core reads it to stay conservative when it
+    #   barely parsed the evidence — a rewrite should not ride on a weak read.
 
 
 def extract(body: str, view: GraphView) -> EvidenceFrame:
@@ -448,18 +550,38 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     trusted code — it is deliberately NOT routed through this possibly-neural step."""
     b = body.lower()
     states = find_states(view, body)
+    direction = transition_direction(b, states)
+    reaches_source = any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW)
+    is_reversion = any(k in b for k in _REVERSION_KW)
+    is_forward = ("differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b)
+    is_lateral = any(k in b for k in _LATERAL_KW)
+    is_aging = any(k in b for k in _AGE_KW)
+    is_function = any(k in b for k in _FUNC_KW)
+    identity_preserved = bool(_IDENTITY_PRESERVED_RE.search(body))
+    is_confirmation = any(k in b for k in _CONFIRM_KW)
+
+    # Extraction-faithfulness: how much the perception layer actually pinned down.
+    # Structural inputs only (entity count, direction settled, any phenomenon cue) —
+    # no magnitude, no command — so it stays a classification signal like the rest.
+    has_signal = any((is_reversion, is_lateral, is_aging, is_function,
+                      identity_preserved, is_confirmation, is_forward, reaches_source))
+    score = (0.45 * (len(states) >= 1) + 0.20 * (len(states) >= 2)
+             + 0.15 * (direction is not None) + 0.20 * has_signal)
+    faithfulness = min(1.0, score) if (states or has_signal) else 0.15
+
     return EvidenceFrame(
         entities=states,
-        direction=transition_direction(b, states),
-        reaches_source=any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW),
-        is_reversion=any(k in b for k in _REVERSION_KW),
-        is_forward_worded=("differentiat" in b and "dedifferentiat" not in b and "de-differentiat" not in b),
-        is_lateral=any(k in b for k in _LATERAL_KW),
-        is_aging=any(k in b for k in _AGE_KW),
-        is_function=any(k in b for k in _FUNC_KW),
-        identity_preserved=bool(_IDENTITY_PRESERVED_RE.search(body)),
-        is_confirmation=any(k in b for k in _CONFIRM_KW),
+        direction=direction,
+        reaches_source=reaches_source,
+        is_reversion=is_reversion,
+        is_forward_worded=is_forward,
+        is_lateral=is_lateral,
+        is_aging=is_aging,
+        is_function=is_function,
+        identity_preserved=identity_preserved,
+        is_confirmation=is_confirmation,
         content_words=_content(body),
+        faithfulness=faithfulness,
     )
 
 
@@ -494,11 +616,16 @@ def _match_pending(view: GraphView, states):
         return exact
     names = {s.name for s in states}
     if names:
+        # pick the pending with the MOST subject overlap, not merely the first that
+        # shares any state — with several outstanding pendings, first-match could
+        # resolve (and drop) the wrong one.
+        best, best_ov = None, 0
         for p in pids:
             subject = set(p.split("::", 1)[-1].split("+"))
-            if names & subject:
-                return p
-        return None  # a subject was named but nothing overlaps: do not guess
+            ov = len(names & subject)
+            if ov > best_ov:
+                best, best_ov = p, ov
+        return best  # None if a subject was named but nothing overlaps: do not guess
     return pids[0] if len(pids) == 1 else None
 
 
@@ -623,7 +750,7 @@ def _ingest(item: EvidenceItem, view: GraphView) -> IngestResult:
             deltas += _revise(item.id, comp, S * 0.6, direction=+1)
 
         return IngestResult(deltas, f"in-model contradiction; revised {tgt.id} (S={S:.2f})",
-                            0.5 + 0.4 * S, False)
+                            round((0.5 + 0.4 * S) * frame.faithfulness, 3), False)
 
     # Confirmation — slight strengthen of a mid-confidence belief, else no_op.
     support = _find_support_target(view, frame)
