@@ -38,7 +38,7 @@ PROBES = [
     "seam_guard", "firewall_emit_guard",
     "renamed_seed_probe", "paraphrase_probe", "extract_probe",
     "direction_probe", "polarity_probe", "deterministic_perception_probe",
-    "ood_subtype_probe", "skepticism_probe",
+    "ood_subtype_probe", "metamorphic_probe", "skepticism_probe",
     "adversarial_probe", "adversarial_provenance_probe",
     "malformed_provenance_probe", "trajectory_probe",
     "calibration_probe", "sequence_probe",
