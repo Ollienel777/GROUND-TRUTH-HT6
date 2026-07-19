@@ -188,43 +188,54 @@ PRECISION_GATE = [
      "Fibroblast cells dedifferentiated to a MesodermalProgenitor state. Reproducible."),
     ("reprogramming + FUNC_KW 'function' -> source",
      "Fibroblasts were reprogrammed to PluripotentStemCell, restoring pluripotent function. Reproducible."),
-]
-
-# XFAIL: a genuine structural precision hole surfaced while building the row — a
-# contrast/comparison clause names a second terminal, tripping the lateral
-# detector on an item whose asserted claim is an in-model reprogramming. Tracked,
-# NOT gated (won't block work), NOT silently fixed (a fix touches decide_ood and
-# trades against lateral recall — needs its own go-ahead + the recall row as guard).
-PRECISION_XFAIL = [
+    # Co-mention contrast (was XFAIL): a distractor terminal named in a contrast aside
+    # must NOT be mis-paired with the real subject. Fixed by _strip_contrast; now gated.
     ("contrast 'unlike Neuron cells' (subject Fib -> PSC)",
      "Fibroblast cells, unlike Neuron cells, were reprogrammed to a PluripotentStemCell state. Reproducible."),
     ("comparison 'compared with Neuron cells' (subject Fib -> PSC)",
      "Compared with Neuron cells, Fibroblast cells reverted to the PluripotentStemCell state. Reproducible."),
 ]
 
+# Genuine laterals wrapped AROUND a contrast aside. These are the false-negative risk
+# a naive contrast-split would introduce (subject severed from its conversion target);
+# _strip_contrast excises only the aside and leaves the main clause intact, so they MUST
+# still fire. Written as gated cases, NOT waved off as "contrived" (condition 2).
+LATERAL_ASIDE_GATE = [
+    ("straddling aside, no state ('unlike its usual fate')",
+     "A single factor turned Fibroblast, unlike its usual fate, into Neuron. Reproducible."),
+    ("parenthetical distractor state ('unlike IntestinalEpithelialCell')",
+     "A single factor converted Fibroblast, unlike IntestinalEpithelialCell cells, into Neuron. Reproducible."),
+]
 
 def _row2_precision():
     print("\n" + "-" * 78)
     print("ROW 2 :: OOD NEAR-MISS PRECISION :: relation = INVARIANT (stay in-model)")
-    print("  GATES the structural in_model_transition guard. want ood=False.")
+    print("  GATES the structural in_model_transition guard + contrast-aside handling.")
     gated_fail = []
+
+    print("  (a) in-model must NOT flag  (want ood=False):")
+    a_fail = 0
     for label, body in PRECISION_GATE:
         ood, op, name = _verdict(body)
         ok = not ood
+        a_fail += not ok
         if not ok:
             gated_fail.append(label)
-        got = f"{op}({name})" if op else "in-model"
-        print(f"    {'ok  ' if ok else 'FAIL'}  {label:52} -> {got}")
+        print(f"    {'ok  ' if ok else 'FAIL'}  {label:52} -> {(op and f'{op}({name})') or 'in-model'}")
     n = len(PRECISION_GATE)
-    print(f"    -> gated near-miss precision: {n - len(gated_fail)}/{n} hold in-model")
+    print(f"    -> {n - a_fail}/{n} hold in-model")
 
-    print("\n  tracked structural holes (XFAIL — not gated):")
-    for label, body in PRECISION_XFAIL:
+    print("  (b) genuine lateral AROUND a contrast aside must STILL flag  (want ood=True lateral):")
+    b_fail = 0
+    for label, body in LATERAL_ASIDE_GATE:
         ood, op, name = _verdict(body)
-        # expected: still false-flagged. XFAIL if so; note if a later fix closed it.
-        tag = "XFAIL" if ood else "XPASS(closed?)"
-        got = f"{op}({name})" if op else "in-model"
-        print(f"    {tag:14} {label:46} -> {got}")
+        ok = ood and op == "propose_regime" and "lateral" in name
+        b_fail += not ok
+        if not ok:
+            gated_fail.append(label)
+        print(f"    {'ok  ' if ok else 'FAIL'}  {label:52} -> {(op and f'{op}({name})') or 'in-model'}")
+    m = len(LATERAL_ASIDE_GATE)
+    print(f"    -> {m - b_fail}/{m} genuine laterals preserved")
     return gated_fail
 
 
