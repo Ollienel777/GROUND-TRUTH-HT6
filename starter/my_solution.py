@@ -496,6 +496,35 @@ def _split_clauses(body: str):
     return parts or [body]
 
 
+# Contrast/comparison asides ("Fibroblast, unlike Neuron cells, reverted to PSC";
+# "Compared with Neuron cells, Fibroblast ...") name a state that is explicitly NOT a
+# participant in the event. For the lateral CO-OCCURRENCE test only, the aside is excised
+# so a contrasted distractor cannot be mis-paired with the real subject. Only a
+# COMMA-DELIMITED aside — one actually set off by punctuation — is excised:
+#   leading        "Unlike X, <main>"          trigger at clause start THROUGH a comma
+#   parenthetical  "<subj>, unlike X, <pred>"   comma THROUGH the next comma
+#   trailing       "<main>, unlike X"           comma THROUGH clause end
+# The main clause (subject + predicate) is always left intact, so a genuine lateral stated
+# around an aside still fires. A comma-LESS "aside" is treated as part of the main clause
+# (the defensible default): this can never over-excise the subject/target, so the fix adds
+# ZERO false-negatives; the rarer comma-less false-positive stays a documented residual, no
+# worse than before the fix. Closed class, like the NegEx/ConText triggers; deliberately NOT
+# used by the reversion scan or negation fallback (both read the untouched clauses), so it
+# cannot perturb reversion detection.
+_CONTRAST_TRIGGER = (
+    r"unlike|compared\s+with|compared\s+to|in\s+contrast\s+(?:to|with)"
+    r"|as\s+opposed\s+to|rather\s+than|relative\s+to|by\s+contrast|as\s+distinct\s+from")
+_CONTRAST_ASIDE = re.compile(
+    r"^\s*(?:" + _CONTRAST_TRIGGER + r")\b[^,]*,"     # leading aside: needs a terminating comma
+    r"|,\s*(?:" + _CONTRAST_TRIGGER + r")\b[^,]*",    # comma-introduced aside: to next comma / clause end
+    re.IGNORECASE)
+
+
+def _strip_contrast(clause: str) -> str:
+    """Excise a comma-delimited contrast/comparison aside from one clause (lateral only)."""
+    return _CONTRAST_ASIDE.sub(" ", clause)
+
+
 def _neg_split(low: str):
     """Split a lowercased clause into (asserted, negated) spans: the text a leading
     negation trigger scopes (up to the next comma / contrast conjunction) is 'negated';
@@ -561,7 +590,7 @@ def decide_ood(frame: "EvidenceFrame", view: GraphView):
     # not a described lateral conversion, and pairing them globally fabricates an OOD flag.
     lateral_struct = any(
         a.potency_level == c.potency_level and a.lineage_identity != c.lineage_identity
-        for group in frame.entity_clauses for a in group for c in group if a is not c
+        for group in frame.lateral_clauses for a in group for c in group if a is not c
     )
     potency_changes = any(a.potency_level != c.potency_level for a in states for c in states if a is not c)
 
@@ -680,6 +709,7 @@ class EvidenceFrame:
     extractor would fill."""
     entities: list                 # resolved graph CellState nodes
     entity_clauses: list           # entities grouped by clause (for clause-local tests)
+    lateral_clauses: list          # entities grouped by clause, contrast asides excised (lateral only)
     direction: str | None          # 'forward' | 'backward' | None
     reaches_source: bool           # a source-potency state or a source-ward word
     is_reversion: bool             # an ASSERTED reversion (un-negated, factual, an event)
@@ -716,6 +746,9 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
             states.append(cs)
     clauses = _split_clauses(body)
     entity_clauses = [find_states(view, c) for c in clauses]
+    # Separate grouping for the lateral test only: contrast asides excised so a
+    # contrasted distractor state is not mis-paired with the real subject.
+    lateral_clauses = [find_states(view, _strip_contrast(c)) for c in clauses]
     asserted, negated, hypothetical, comparative = _scan_reversion(clauses)
     # Structural negation (asserted-wins): a clause whose negated span negates a
     # source-directed transition, even when the verb is outside the reversion lexicon
@@ -734,6 +767,7 @@ def extract(body: str, view: GraphView) -> EvidenceFrame:
     return EvidenceFrame(
         entities=states,
         entity_clauses=entity_clauses,
+        lateral_clauses=lateral_clauses,
         direction=transition_direction(b, spans),
         reaches_source=any(s.potency_level <= 1 for s in states) or any(k in b for k in _SOURCE_KW),
         is_reversion=asserted,
