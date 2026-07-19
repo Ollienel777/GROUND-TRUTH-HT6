@@ -194,6 +194,16 @@ PRECISION_GATE = [
      "Fibroblast cells, unlike Neuron cells, were reprogrammed to a PluripotentStemCell state. Reproducible."),
     ("comparison 'compared with Neuron cells' (subject Fib -> PSC)",
      "Compared with Neuron cells, Fibroblast cells reverted to the PluripotentStemCell state. Reproducible."),
+    # Contrast-aside precision surface, promoted from one-off checks into the enforced gate:
+    # the exact phrasings a future edit to _CONTRAST_ASIDE / lateral_clauses would re-break.
+    ("leading 'By contrast,' aside (subject Fib -> PSC)",
+     "By contrast, Fibroblast cells reverted to the PluripotentStemCell state. Reproducible."),
+    ("'rather than becoming Neuron' not-taken distractor (Fib -> PSC)",
+     "Fibroblast, rather than becoming Neuron, reverted to the PluripotentStemCell state. Reproducible."),
+    ("multi-aside, two contrast clauses (Fib -> PSC)",
+     "Fibroblast cells, unlike Neuron cells, reverted to the PluripotentStemCell state, in contrast to Neuron. Reproducible."),
+    ("separate-sentence distractor, clause-locality (Fib -> PSC)",
+     "Neuron cells are terminal. Fibroblast reverted to the PluripotentStemCell state. Reproducible."),
 ]
 
 # Genuine laterals wrapped AROUND a contrast aside. These are the false-negative risk
@@ -210,6 +220,14 @@ LATERAL_ASIDE_GATE = [
     # "strip everything after the trigger" would over-excise into a false-negative.
     ("comma-LESS leading aside kept in main clause -> lateral still fires",
      "Unlike IntestinalEpithelialCell cells a factor converted Fibroblast into Neuron. Reproducible."),
+    # not-taken alternatives ('rather than X') and a comma'd leading aside: genuine
+    # laterals whose real pair must survive excision (promoted from one-off checks).
+    ("'rather than SkeletalMuscleCell' not-taken distractor -> lateral Fib->Neuron",
+     "A factor converted Fibroblast into Neuron rather than SkeletalMuscleCell. Reproducible."),
+    ("comma'd leading aside, no state ('Unlike quiescent cells,') -> lateral",
+     "Unlike quiescent cells, a factor converted Fibroblast into Neuron. Reproducible."),
+    ("'rather than reverting' not-taken -> lateral Fib->Neuron",
+     "A factor made Fibroblast become Neuron rather than reverting. Reproducible."),
 ]
 
 # Comma-LESS leading contrast on an IN-MODEL item: also not excised, so the contrasted
