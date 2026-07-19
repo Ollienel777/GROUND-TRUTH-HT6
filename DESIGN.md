@@ -126,6 +126,28 @@ that puts the source in an oblique phrase — "arose in cultures *seeded with* P
 defaults backward). This is the price of rules-mode perception, and the exact ceiling a
 neural extractor would lift.
 
+**The residual, mapped.** An open vocabulary cannot be closed by enumerating wordings;
+that is the arms race this design refuses. The discipline instead is to keep each
+`extract` decision structural (vocabulary-invariant) where the graph allows, and to
+require every lexical residual to fail on the *safe* side — hold, `no_op`, or
+default-backward — never a fabricated contradiction or a missed strong-and-replicated
+result. `body → EvidenceFrame` is a small, fixed set of decisions, so the exposure is
+bounded and stated rather than hoped:
+
+| Decision | Structural basis | Lexical residual → failure direction |
+|---|---|---|
+| Magnitude / which claim | provenance dimensions + `method_class` routing | none — never body-derived (firewall) |
+| Which states | `find_state_spans`: greedy longest n-gram, separator-invariant (case/space/hyphen), graph lookup | abbreviation synonymy (`PSC` ↔ "pluripotent stem cell") deliberately unresolved — a synonym table hardcodes names and breaks the seed-invariance the renamed-seed matrix verifies → a missed entity collapses to `no_op` (a miss, never a bad edit) |
+| Direction (from→to) | potency vs. C1; origin cue / transition connective | oblique non-`from` origin (tracked `XFAIL`, `direction_probe` N8) → **defaults backward** |
+| Reversion asserted? | verb/descriptor split + clause-scoped polarity/modality/predication | oblique negation, or a reversion verb outside the lexicon → **suppressed to `no_op`**; backstopped by the source+terminal structural detector, so a real reprogramming still revises |
+| OOD phenomenon (axis/regime) | domain declaration + potency/lineage structure | recall on "aging/function/lateral" phrasing stays lexical — these have no structural signature beyond the declaration. **Accepted, not chased:** the axis is precision-weighted with a near-miss trap, so broadening recall is negative-value. |
+
+Four of five decisions are structural or fail safe; the one irreducibly-lexical row —
+OOD-phenomenon recall — is precisely what a neural extractor would lift and nothing else
+here would. Under the stdlib-only, no-endpoint constraint that boundary is not a gap we
+can close but the honest ceiling of rules-mode perception, measured and located rather
+than papered over.
+
 **On architecture:** this *is* the neurosymbolic design — perception → grounding →
 probabilistic update → symbolic control — with perception deliberately in rules-mode.
 For a closed, fully-modeled domain an LLM buys recall at the cost of determinism and
