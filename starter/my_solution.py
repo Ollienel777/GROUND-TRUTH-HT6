@@ -161,6 +161,18 @@ _INJECTION_OVERRIDE_NOSPACE_RE = re.compile(
     r"override(?:the)?(?:prior|previous|provenance|"
     r"confidence(?!(?:interval|bound|level|limit)s?)|"
     r"claim|belief|knowledgebase|instruction|rules?)")
+# A directive that assigns a claim/belief a specific [0,1] value ("set C3g to 0.99",
+# "raise C4 to 1.0"). This is the one injection form the structural locks do NOT
+# stop on their own — with STRONG (honest or spoofed) provenance the item would
+# otherwise flow to the extractor. Targeted to be false-positive-safe: the object
+# must be a claim-id-SHAPED token (letter-digit, e.g. `c3g`/`c4` — never a gene like
+# `oct4`/`p53`) or explicit belief vocabulary, AND the value must be in [0,1] (a
+# confidence), so ordinary science ("set temperature to 37", "raise Oct4 to 0.9") is
+# not flagged. It never fires on numbers alone — it needs the assign-a-belief shape.
+_INJECTION_SET_VALUE_RE = re.compile(
+    r"\b(?:set|raise|lower|fix|force)\s+(?:the\s+)?"
+    r"(?:[a-z]\d[a-z]?|confidence|belief|probability|posterior|claim)\s+to\s+"
+    r"(?:0?\.\d+|1(?:\.0)?|0|1)\b", re.IGNORECASE)
 
 
 def _normalize_for_scan(body: str) -> str:
@@ -181,7 +193,9 @@ def looks_like_injection(body: str) -> bool:
 
     if (any(p in collapsed or p in letters for p in _INJECTION_PHRASES)
             or _INJECTION_OVERRIDE_RE.search(collapsed)
-            or _INJECTION_OVERRIDE_NOSPACE_RE.search(nospace)):
+            or _INJECTION_OVERRIDE_NOSPACE_RE.search(nospace)
+            or _INJECTION_SET_VALUE_RE.search(collapsed)
+            or _INJECTION_SET_VALUE_RE.search(letters)):
         return True
     if any(p in nospace for p in _INJECTION_NOSPACE):
         return True
